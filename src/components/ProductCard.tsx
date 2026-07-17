@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Heart, ShoppingCart, Star, StarHalf, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Product } from "@/lib/products";
@@ -91,15 +92,18 @@ export default function ProductCard({ product, className }: ProductCardProps) {
     setActiveImg((prev) => (prev + 1) % product.images.length);
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     setAddedToCart(true);
     setTimeout(() => setAddedToCart(false), 1500);
   };
 
   return (
-    <div
+    <Link
+      href={`/${product.id}`}
       className={cn(
-        "group relative flex flex-col rounded-2xl overflow-hidden border border-zinc-200/70 dark:border-zinc-800/70 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1",
+        "group relative flex flex-col rounded-2xl overflow-hidden border border-zinc-200/70 dark:border-zinc-800/70 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer",
         className
       )}
     >
@@ -202,7 +206,7 @@ export default function ProductCard({ product, className }: ProductCardProps) {
           {product.images.map((img, i) => (
             <button
               key={i}
-              onClick={() => setActiveImg(i)}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveImg(i); }}
               className={cn(
                 "relative w-10 h-10 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all duration-150",
                 i === activeImg
@@ -319,7 +323,7 @@ export default function ProductCard({ product, className }: ProductCardProps) {
             {addedToCart ? "Added!" : product.inStock ? "Add to Cart" : "Unavailable"}
           </button>
           <button
-            onClick={() => setWishlisted((w) => !w)}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWishlisted((w) => !w); }}
             className={cn(
               "flex items-center justify-center rounded-xl px-3 py-2.5 text-xs font-semibold border transition-all duration-200 active:scale-95",
               wishlisted
@@ -337,6 +341,6 @@ export default function ProductCard({ product, className }: ProductCardProps) {
           </button>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }
