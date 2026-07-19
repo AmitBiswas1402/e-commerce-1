@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ClerkProvider } from "@clerk/nextjs";
 import Navbar from "@/components/Navbar";
+import Providers from "@/components/Providers";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -26,8 +27,10 @@ export default function RootLayout({
           className={`${geist.variable} ${mono.variable} min-h-full flex flex-col`}
           suppressHydrationWarning
         >
-          <Navbar />
-          {children}
+          <Providers>
+            <Navbar />
+            {children}
+          </Providers>
         </body>
       </html>
     </ClerkProvider>

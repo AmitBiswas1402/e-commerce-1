@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Product } from "@/lib/products";
+import { useCart } from "@/context/CartContext";
+import { useWishlist } from "@/context/WishlistContext";
 
 // ─── Category Colors ─────────
 const CATEGORY_COLORS: Record<string, string> = {
@@ -66,9 +68,11 @@ function StarRating({ rating, max = 5, size = "sm" }: { rating: number; max?: nu
 // ─── ProductDetail Client Component ────────────
 export default function ProductDetail({ product }: { product: Product }) {
   const [activeImg, setActiveImg] = useState(0);
-  const [wishlisted, setWishlisted] = useState(false);
   const [addedToCart, setAddedToCart] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  const { addToCart } = useCart();
+  const { toggleWishlist, isInWishlist } = useWishlist();
+  const wishlisted = isInWishlist(product.id);
 
   const discount = Math.round(
     ((product.originalPrice - product.price) / product.originalPrice) * 100
@@ -81,6 +85,7 @@ export default function ProductDetail({ product }: { product: Product }) {
     : "";
 
   const handleAddToCart = () => {
+    addToCart(product, quantity);
     setAddedToCart(true);
     setTimeout(() => setAddedToCart(false), 2000);
   };
@@ -298,7 +303,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                 {addedToCart ? "Added to Cart!" : product.inStock ? "Add to Cart" : "Unavailable"}
               </button>
               <button
-                onClick={() => setWishlisted((w) => !w)}
+                onClick={() => toggleWishlist(product)}
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold border transition-all duration-200 active:scale-95",
                   wishlisted

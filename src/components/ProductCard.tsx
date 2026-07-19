@@ -6,6 +6,9 @@ import Link from "next/link";
 import { Heart, ShoppingCart, Star, StarHalf, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Product } from "@/lib/products";
+import { useCart } from "@/context/CartContext";
+import { useWishlist } from "@/context/WishlistContext";
+import { slugify } from "@/lib/slug";
 
 // ─── Category Badge Colors ───────────────────────────────────────────────────
 const CATEGORY_COLORS: Record<string, string> = {
@@ -68,8 +71,10 @@ interface ProductCardProps {
 
 export default function ProductCard({ product, className }: ProductCardProps) {
   const [activeImg, setActiveImg] = useState(0);
-  const [wishlisted, setWishlisted] = useState(false);
   const [addedToCart, setAddedToCart] = useState(false);
+  const { addToCart } = useCart();
+  const { toggleWishlist, isInWishlist } = useWishlist();
+  const wishlisted = isInWishlist(product.id);
 
   const discount = Math.round(
     ((product.originalPrice - product.price) / product.originalPrice) * 100
@@ -95,13 +100,14 @@ export default function ProductCard({ product, className }: ProductCardProps) {
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    addToCart(product);
     setAddedToCart(true);
     setTimeout(() => setAddedToCart(false), 1500);
   };
 
   return (
     <Link
-      href={`/${product.id}`}
+      href={`/${slugify(product.name)}`}
       className={cn(
         "group relative flex flex-col rounded-2xl overflow-hidden border border-zinc-200/70 dark:border-zinc-800/70 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer",
         className
@@ -182,7 +188,7 @@ export default function ProductCard({ product, className }: ProductCardProps) {
 
         {/* Wishlist button (top-right) */}
         <button
-          onClick={(e) => { e.stopPropagation(); setWishlisted((w) => !w); }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleWishlist(product); }}
           className="absolute top-2.5 right-2.5 z-10 flex size-8 items-center justify-center rounded-full bg-white/80 dark:bg-zinc-900/80 text-zinc-500 dark:text-zinc-400 shadow backdrop-blur-sm hover:scale-110 active:scale-95 transition-all duration-200"
           aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
         >
@@ -323,7 +329,7 @@ export default function ProductCard({ product, className }: ProductCardProps) {
             {addedToCart ? "Added!" : product.inStock ? "Add to Cart" : "Unavailable"}
           </button>
           <button
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWishlisted((w) => !w); }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleWishlist(product); }}
             className={cn(
               "flex items-center justify-center rounded-xl px-3 py-2.5 text-xs font-semibold border transition-all duration-200 active:scale-95",
               wishlisted

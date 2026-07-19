@@ -21,6 +21,14 @@ export default function Users() {
 
   return (
     <div className="flex items-center gap-1.5 sm:gap-3">
+      {/* WishList Icon Component */}
+      <WishList />
+
+      {/* Cart Icon Component */}
+      <Cart />
+
+      <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-0.5" />
+
       {!isSignedIn ? (
         <div className="flex items-center gap-1 sm:gap-2">
           <SignInButton mode="modal">
@@ -45,15 +53,6 @@ export default function Users() {
         </div>
       ) : (
         <div className="flex items-center gap-2 sm:gap-3">
-          
-          {/* WishList Icon Component */}
-          <WishList />
-
-          {/* Cart Icon Component */}
-          <Cart />
-
-          <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-0.5" />
-
           {/* User Profile avatar dropdown */}
           <div className="flex items-center gap-2">
             <UserButton />
@@ -63,7 +62,6 @@ export default function Users() {
               </span>
             )}
           </div>
-
         </div>
       )}
     </div>

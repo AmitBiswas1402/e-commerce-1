@@ -12,6 +12,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select"
 import { PRODUCTS, type Product } from "@/lib/products"
+import { slugify } from "@/lib/slug"
 
 interface SearchBarProps extends React.HTMLAttributes<HTMLFormElement> {
   onSearch?: (query: string, category: string) => void
@@ -91,7 +92,7 @@ export default function SearchBar({
       setQuery(product.name)
       setActiveIndex(-1)
       setIsFocused(false)
-      router.push(`/${product.id}`)
+      router.push(`/${slugify(product.name)}`)
     },
     [router]
   )
@@ -174,7 +175,11 @@ export default function SearchBar({
                 {selectedCategoryLabel}
               </span>
             </SelectTrigger>
-            <SelectContent className="border border-zinc-200 bg-white/95 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/95">
+            <SelectContent
+              align="start"
+              alignItemWithTrigger={false}
+              className="border border-zinc-200 bg-white/95 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/95"
+            >
               {CATEGORIES.map((cat) => (
                 <SelectItem
                   key={cat.value}

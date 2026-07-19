@@ -1,9 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import {
-  Sun,
-  Moon,
   Monitor,
   Shirt,
   Gem,
@@ -38,37 +36,10 @@ const CATEGORY_ICONS: Record<
 };
 
 export default function Navbar() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-
   useEffect(() => {
-    const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
-    const systemPrefersDark = window.matchMedia(
-      "(prefers-color-scheme: dark)",
-    ).matches;
-    const initialTheme = savedTheme || (systemPrefersDark ? "dark" : "light");
-
-    if (initialTheme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-
-    setTimeout(() => {
-      setTheme(initialTheme);
-    }, 0);
+    document.documentElement.classList.remove("dark");
+    localStorage.removeItem("theme");
   }, []);
-
-  const toggleTheme = () => {
-    const newTheme = theme === "light" ? "dark" : "light";
-    setTheme(newTheme);
-    localStorage.setItem("theme", newTheme);
-
-    if (newTheme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-zinc-200/80 bg-white/80 backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-950/80">
@@ -83,26 +54,10 @@ export default function Navbar() {
           <SearchBar placeholder="Search products..." />
         </div>
 
-        {/* Action Controls & Theme Toggle (Right) */}
+        {/* Action Controls (Right) */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Theme Toggle Button */}
-          <button
-            onClick={toggleTheme}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-indigo-600 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-indigo-400 transition-colors"
-            title={
-              theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"
-            }
-            aria-label="Toggle theme"
-          >
-            {theme === "light" ? (
-              <Moon className="size-[1.2rem]" />
-            ) : (
-              <Sun className="size-[1.2rem]" />
-            )}
-          </button>
-
           {/* User authentication, Cart, Wishlist */}
-          <div className="pl-1 border-l border-zinc-200 dark:border-zinc-800">
+          <div className="pl-1">
             <Users />
           </div>
         </div>
