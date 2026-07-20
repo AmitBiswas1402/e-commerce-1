@@ -1,4 +1,4 @@
-import { getProductBySlug } from "@/lib/slug";
+import { getProductBySlug } from "@/lib/products-server";
 import ProductDetail, { ProductNotFound } from "@/components/ProductDetail";
 
 export default async function ProductPage({
@@ -7,7 +7,7 @@ export default async function ProductPage({
   params: Promise<{ productSlug: string }>;
 }) {
   const { productSlug } = await params;
-  const product = getProductBySlug(productSlug);
+  const product = await getProductBySlug(productSlug);
 
   if (!product) {
     return <ProductNotFound />;

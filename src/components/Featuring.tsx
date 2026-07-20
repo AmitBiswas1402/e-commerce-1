@@ -1,10 +1,10 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Sparkles, SearchX } from "lucide-react";
-import { PRODUCTS } from "@/lib/products";
+import { type Product } from "@/lib/products";
 import ProductCard from "./ProductCard";
 
 // ── Inner component that uses useSearchParams ──────────────────────────────
@@ -13,14 +13,43 @@ function FeaturingContent() {
   const rawQuery = searchParams.get("q") ?? "";
   const query = rawQuery.trim().toLowerCase();
 
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/products")
+      .then((res) => res.json())
+      .then((data) => {
+        setProductsList(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load products via REST API:", err);
+        setLoading(false);
+      });
+  }, []);
+
   const filtered = query
-    ? PRODUCTS.filter(
+    ? productsList.filter(
         (p) =>
           p.name.toLowerCase().includes(query) ||
           p.category.toLowerCase().includes(query) ||
           p.description.toLowerCase().includes(query)
       )
-    : PRODUCTS;
+    : productsList;
+
+  if (loading) {
+    return (
+      <div className="w-full py-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-96 rounded-2xl bg-zinc-100 dark:bg-zinc-900 animate-pulse"
+          />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <section className="w-full py-10">

@@ -11,7 +11,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select"
-import { PRODUCTS, type Product } from "@/lib/products"
+import { type Product } from "@/lib/products"
 import { slugify } from "@/lib/slug"
 
 interface SearchBarProps extends React.HTMLAttributes<HTMLFormElement> {
@@ -60,17 +60,30 @@ export default function SearchBar({
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const [productsList, setProductsList] = useState<Product[]>([])
+
+  useEffect(() => {
+    fetch("/api/products")
+      .then((res) => res.json())
+      .then((data) => {
+        setProductsList(data)
+      })
+      .catch((err) => {
+        console.error("Failed to load products in SearchBar via REST API:", err)
+      })
+  }, [])
+
   // ── Derive suggestions via useMemo (no setState in effect) ────────────────
   const suggestions = useMemo<Product[]>(() => {
     const q = query.trim().toLowerCase()
     if (!q) return []
-    return PRODUCTS.filter(
+    return productsList.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q)
     ).slice(0, 5)
-  }, [query])
+  }, [query, productsList])
 
   // ── Derive dropdown open state (no separate state needed) ─────────────────
   const showDropdown = isFocused && suggestions.length > 0

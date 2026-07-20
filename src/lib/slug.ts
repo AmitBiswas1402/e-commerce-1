@@ -1,5 +1,3 @@
-import { PRODUCTS, type Product } from "./products"
-
 export function slugify(name: string): string {
   return name
     .toString()
@@ -11,8 +9,4 @@ export function slugify(name: string): string {
     .replace(/\-\-+/g, '-')         // Replace multiple - with single -
     .replace(/^-+/, '')             // Trim - from start of text
     .replace(/-+$/, '');            // Trim - from end of text
-}
-
-export function getProductBySlug(slug: string): Product | undefined {
-  return PRODUCTS.find((p) => slugify(p.name) === slug)
 }

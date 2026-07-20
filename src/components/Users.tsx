@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useEffect } from "react"
 import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs"
 import { Button } from "./ui/button"
 import Cart from "./Cart"
@@ -8,6 +8,29 @@ import WishList from "./WishList"
 
 export default function Users() {
   const { isLoaded, isSignedIn, user } = useUser()
+
+  useEffect(() => {
+    if (isSignedIn && user) {
+      const email = user.emailAddresses[0]?.emailAddress
+      if (email) {
+        fetch("/api/users", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            clerkId: user.id,
+            email: email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            imageUrl: user.imageUrl,
+          }),
+        }).catch((err) => {
+          console.error("Failed to sync user via REST API:", err)
+        })
+      }
+    }
+  }, [isSignedIn, user])
 
   // Handle loading state gracefully to avoid visual flicker
   if (!isLoaded) {

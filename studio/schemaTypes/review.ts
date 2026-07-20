@@ -8,11 +8,15 @@ export const reviewType = defineType({
   icon: StarIcon,
   fields: [
     defineField({
-      name: 'user',
-      title: 'User',
-      type: 'reference',
-      to: [{ type: 'user' }],
+      name: 'userName',
+      title: 'User Name',
+      type: 'string',
       validation: (Rule) => Rule.required(),
+    }),
+    defineField({
+      name: 'userEmail',
+      title: 'User Email',
+      type: 'string',
     }),
     defineField({
       name: 'product',
