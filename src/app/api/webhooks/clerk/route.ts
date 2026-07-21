@@ -4,7 +4,6 @@ import { WebhookEvent } from "@clerk/nextjs/server"
 import { db } from "@/lib"
 import { users } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import { createClient } from "next-sanity"
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
@@ -52,20 +51,7 @@ export async function POST(req: Request) {
   const { id: clerkId } = evt.data
   const eventType = evt.type
 
-  // Instantiate Write-enabled Sanity Client if token is present
-  const hasSanityToken =
-    process.env.SANITY_API_TOKEN &&
-    process.env.SANITY_API_TOKEN !== "sanity_write_token_placeholder_54321"
 
-  const sanityClient = hasSanityToken
-    ? createClient({
-        projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
-        dataset: process.env.NEXT_PUBLIC_SANITY_DATASET || "production",
-        apiVersion: "2024-03-11",
-        token: process.env.SANITY_API_TOKEN,
-        useCdn: false,
-      })
-    : null
 
   if (eventType === "user.created" || eventType === "user.updated") {
     const { email_addresses, first_name, last_name, image_url } = evt.data
@@ -100,28 +86,7 @@ export async function POST(req: Request) {
           },
         })
 
-      // 2. Sync to Sanity CMS (asynchronously, if write token exists)
-      if (sanityClient) {
-        try {
-          const sanityUserId = `user-${clerkId}`
-          await sanityClient.createOrReplace({
-            _id: sanityUserId,
-            _type: "user",
-            clerkId: clerkId as string,
-            email: email,
-            firstName: first_name || undefined,
-            lastName: last_name || undefined,
-            imageUrl: image_url || undefined,
-            role: "CUSTOMER",
-          })
-        } catch (sanityError) {
-          console.error("Sanity CMS sync error (user.created/updated):", sanityError)
-        }
-      } else {
-        console.warn(
-          "Skipping Sanity CMS user sync: SANITY_API_TOKEN is not configured in .env"
-        )
-      }
+
 
       return new Response("User synced successfully", { status: 200 })
     } catch (dbError) {
@@ -135,15 +100,7 @@ export async function POST(req: Request) {
       // 1. Delete from Postgres Database
       await db.delete(users).where(eq(users.clerkId, clerkId as string))
 
-      // 2. Delete from Sanity CMS
-      if (sanityClient) {
-        try {
-          const sanityUserId = `user-${clerkId}`
-          await sanityClient.delete(sanityUserId)
-        } catch (sanityError) {
-          console.error("Sanity CMS sync error (user.deleted):", sanityError)
-        }
-      }
+
 
       return new Response("User deleted successfully", { status: 200 })
     } catch (dbError) {

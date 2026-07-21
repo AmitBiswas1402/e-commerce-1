@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
+import Link from "next/link";
 import {
   Monitor,
   Shirt,
@@ -13,6 +14,7 @@ import {
   BookOpen,
   Gamepad2,
   ShoppingBag,
+  LayoutDashboard,
 } from "lucide-react";
 import Logo from "./Logo";
 import SearchBar from "./SearchBar";
@@ -54,13 +56,19 @@ export default function Navbar() {
           <SearchBar placeholder="Search products..." />
         </div>
 
-        {/* Action Controls (Right) */}
-        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Admin Panel Quick Link */}
+          <Link
+            href="/admin"
+            className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 transition-all shadow-xs"
+          >
+            <LayoutDashboard className="size-3.5 text-indigo-400 dark:text-indigo-600" />
+            <span className="hidden sm:inline">Admin Panel</span>
+          </Link>
+
           {/* User authentication, Cart, Wishlist */}
           <div className="pl-1">
             <Users />
           </div>
-        </div>
       </div>
 
       {/* Mobile Search Bar Row (renders on mobile only) */}
