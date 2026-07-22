@@ -14,6 +14,7 @@ import {
 
 export const userRoleEnum = pgEnum("user_role", [
   "CUSTOMER",
+  "VENDOR",
   "ADMIN",
 ]);
 
@@ -57,7 +58,7 @@ export const users = pgTable(
 
     imageUrl: text("image_url"),
 
-    role: userRoleEnum("role").default("CUSTOMER").notNull(),
+    role: userRoleEnum("role"),
 
     createdAt: timestamp("created_at", {
       withTimezone: true,
@@ -154,6 +155,10 @@ export const products = pgTable(
       .references(() => categories.id, {
         onDelete: "restrict",
       }),
+
+    vendorId: uuid("vendor_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
 
     brandId: uuid("brand_id").references(() => brands.id, {
       onDelete: "set null",

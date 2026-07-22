@@ -1,38 +1,58 @@
 "use client"
 
-import React, { useEffect } from "react"
+import React, { useState, useEffect } from "react"
+import Link from "next/link"
+import { useRouter, usePathname } from "next/navigation"
 import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs"
 import { Button } from "./ui/button"
 import Cart from "./Cart"
 import WishList from "./WishList"
+import { Store, ShieldCheck } from "lucide-react"
 
 export default function Users() {
   const { isLoaded, isSignedIn, user } = useUser()
+  const [dbUserRole, setDbUserRole] = useState<"CUSTOMER" | "VENDOR" | "ADMIN" | null>(null)
+  const router = useRouter()
+  const pathname = usePathname()
+
+  // Sync and fetch user profile strictly from Neon PostgreSQL
+  const syncAndFetchUser = async () => {
+    if (!isSignedIn || !user) return
+    const email = user.emailAddresses[0]?.emailAddress
+    if (!email) return
+
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clerkId: user.id,
+          email: email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          imageUrl: user.imageUrl,
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setDbUserRole(data.role || null)
+
+        // If role is blank (null) in DB and user is not on /choose-role page, route them to /choose-role!
+        if (data.role === null && pathname !== "/choose-role") {
+          router.replace("/choose-role")
+        }
+      }
+    } catch (err) {
+      console.error("Failed to sync user via REST API:", err)
+    }
+  }
 
   useEffect(() => {
-    if (isSignedIn && user) {
-      const email = user.emailAddresses[0]?.emailAddress
-      if (email) {
-        fetch("/api/users", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            clerkId: user.id,
-            email: email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            imageUrl: user.imageUrl,
-          }),
-        }).catch((err) => {
-          console.error("Failed to sync user via REST API:", err)
-        })
-      }
-    }
-  }, [isSignedIn, user])
+    syncAndFetchUser()
+  }, [isSignedIn, user, pathname])
 
-  // Handle loading state gracefully to avoid visual flicker
+  // Loading state skeleton
   if (!isLoaded) {
     return (
       <div className="flex items-center gap-2">
@@ -43,7 +63,29 @@ export default function Users() {
   }
 
   return (
-    <div className="flex items-center gap-1.5 sm:gap-3">
+    <div className="flex items-center gap-1.5 sm:gap-2.5">
+      {/* Admin Panel Button ONLY for Admin (Amit) */}
+      {isSignedIn && dbUserRole === "ADMIN" && (
+        <Link
+          href="/admin"
+          className="flex items-center gap-1.5 rounded-full bg-purple-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-purple-500 transition-all shadow-xs shrink-0"
+        >
+          <ShieldCheck className="size-3.5 text-white" />
+          <span>Dashboard</span>
+        </Link>
+      )}
+
+      {/* Vendor Panel Button ONLY for Vendors */}
+      {isSignedIn && dbUserRole === "VENDOR" && (
+        <Link
+          href="/vendor"
+          className="flex items-center gap-1.5 rounded-full bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-500 transition-all shadow-xs shrink-0"
+        >
+          <Store className="size-3.5 text-white" />
+          <span>Dashboard</span>
+        </Link>
+      )}
+
       {/* WishList Icon Component */}
       <WishList />
 
@@ -52,9 +94,10 @@ export default function Users() {
 
       <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-0.5" />
 
+      {/* Standard Clerk Auth Modals — Redirects to /choose-role after SSO callback */}
       {!isSignedIn ? (
         <div className="flex items-center gap-1 sm:gap-2">
-          <SignInButton mode="modal">
+          <SignInButton mode="modal" fallbackRedirectUrl="/choose-role" forceRedirectUrl="/choose-role">
             <Button
               variant="ghost"
               size="sm"
@@ -63,8 +106,8 @@ export default function Users() {
               Sign In
             </Button>
           </SignInButton>
-          
-          <SignUpButton mode="modal">
+
+          <SignUpButton mode="modal" fallbackRedirectUrl="/choose-role" forceRedirectUrl="/choose-role">
             <Button
               variant="default"
               size="sm"
@@ -75,16 +118,11 @@ export default function Users() {
           </SignUpButton>
         </div>
       ) : (
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* User Profile avatar dropdown */}
-          <div className="flex items-center gap-2">
-            <UserButton />
-            {user && (
-              <span className="hidden lg:inline text-xs font-bold text-zinc-700 dark:text-zinc-300 max-w-25 truncate">
-                {user.firstName || user.username || "User"}
-              </span>
-            )}
-          </div>
+        <div className="flex items-center gap-2">
+          <UserButton />
+          <span className="hidden lg:inline text-xs font-bold text-zinc-700 dark:text-zinc-300 max-w-24 truncate">
+            {user.firstName || user.username || "User"}
+          </span>
         </div>
       )}
     </div>
