@@ -2,10 +2,15 @@ import { db } from "@/lib"
 import { products, categories, brands, productImages, productVariants } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { type Product } from "./products"
+import { slugify } from "./slug"
 
 export async function getProductBySlug(slug: string): Promise<Product | undefined> {
   try {
-    const row = await db
+    const rawSlug = slug
+    const decodedSlug = decodeURIComponent(slug).trim()
+    const cleanSlug = slugify(decodedSlug)
+
+    const rows = await db
       .select({
         id: products.id,
         name: products.name,
@@ -20,14 +25,22 @@ export async function getProductBySlug(slug: string): Promise<Product | undefine
       .from(products)
       .leftJoin(categories, eq(products.categoryId, categories.id))
       .leftJoin(brands, eq(products.brandId, brands.id))
-      .where(eq(products.slug, slug))
-      .limit(1)
 
-    if (row.length === 0) {
+    // Match by exact slug, clean slugified title, raw ID, or decoded name
+    const item = rows.find(
+      (r) =>
+        r.slug === rawSlug ||
+        r.slug === cleanSlug ||
+        r.id === rawSlug ||
+        r.id === cleanSlug ||
+        slugify(r.name) === cleanSlug ||
+        r.name.toLowerCase() === decodedSlug.toLowerCase()
+    )
+
+    if (!item) {
       return undefined
     }
 
-    const item = row[0]
     const dbImages = await db
       .select()
       .from(productImages)
