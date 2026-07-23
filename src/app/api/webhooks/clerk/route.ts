@@ -4,6 +4,7 @@ import { WebhookEvent } from "@clerk/nextjs/server"
 import { db } from "@/lib"
 import { users } from "@/db/schema"
 import { eq } from "drizzle-orm"
+import { ADMIN_EMAIL } from "@/lib/authorization"
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
       firstName: first_name || null,
       lastName: last_name || null,
       imageUrl: image_url || null,
-      role: "CUSTOMER" as const, // default role
+      role: email.toLowerCase().trim() === ADMIN_EMAIL ? "ADMIN" as const : null,
     }
 
     try {
@@ -82,6 +83,7 @@ export async function POST(req: Request) {
             firstName: userData.firstName,
             lastName: userData.lastName,
             imageUrl: userData.imageUrl,
+            ...(userData.role === "ADMIN" ? { role: "ADMIN" as const } : {}),
             updatedAt: new Date(),
           },
         })

@@ -1,102 +1,109 @@
+import { currentUser } from "@clerk/nextjs/server"
 import { NextResponse } from "next/server"
+import { desc, eq, or } from "drizzle-orm"
 import { db } from "@/lib"
 import { users } from "@/db/schema"
-import { eq, desc } from "drizzle-orm"
+import { ADMIN_EMAIL, errorMessage, getCurrentDbUser, requireRole, type UserRole } from "@/lib/authorization"
 
-// Only this email is ADMIN — everyone else picks Customer or Vendor
-const ADMIN_EMAIL = "amit.142biswas@gmail.com"
+type RolePayload = { role?: unknown }
 
-// GET /api/users — Fetch user by clerkId or filter by role
+async function syncUserInDb(clerkUser: NonNullable<Awaited<ReturnType<typeof currentUser>>>) {
+  const email = clerkUser.emailAddresses[0]?.emailAddress?.toLowerCase().trim()
+  if (!email) return null
+
+  const isAdmin = email === ADMIN_EMAIL
+
+  const [existing] = await db
+    .select()
+    .from(users)
+    .where(or(eq(users.clerkId, clerkUser.id), eq(users.email, email)))
+    .limit(1)
+
+  const profile = {
+    clerkId: clerkUser.id,
+    email,
+    firstName: clerkUser.firstName || null,
+    lastName: clerkUser.lastName || null,
+    imageUrl: clerkUser.imageUrl || null,
+    updatedAt: new Date(),
+  }
+
+  if (!existing) {
+    await db.insert(users).values({ ...profile, role: isAdmin ? "ADMIN" : null })
+  } else {
+    const newRole = isAdmin ? "ADMIN" : existing.role
+    await db
+      .update(users)
+      .set({ ...profile, role: newRole })
+      .where(eq(users.id, existing.id))
+  }
+
+  const [saved] = await db
+    .select()
+    .from(users)
+    .where(or(eq(users.clerkId, clerkUser.id), eq(users.email, email)))
+    .limit(1)
+
+  return saved
+}
+
+// Returns the signed-in user's own profile. Listing users is admin-only.
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const clerkId = searchParams.get("clerkId")
-    const roleFilter = searchParams.get("role")
+    const role = searchParams.get("role")
+    const current = await getCurrentDbUser()
+    if (!current) return NextResponse.json({ error: "Authentication required" }, { status: 401 })
 
-    if (clerkId) {
-      const result = await db.select().from(users).where(eq(users.clerkId, clerkId)).limit(1)
-      if (result.length === 0) return NextResponse.json({ error: "User not found" }, { status: 404 })
-      return NextResponse.json(result[0])
+    if (!role) return NextResponse.json(current)
+    const access = await requireRole("ADMIN")
+    if (access.status) return NextResponse.json({ error: "Admin access required" }, { status: access.status })
+    if (!(["CUSTOMER", "VENDOR", "ADMIN"] as const).includes(role as UserRole)) {
+      return NextResponse.json({ error: "Invalid role" }, { status: 400 })
     }
-
-    if (roleFilter) {
-      const list = await db.select().from(users).where(eq(users.role, roleFilter as any)).orderBy(desc(users.createdAt))
-      return NextResponse.json(list)
-    }
-
-    const allUsers = await db.select().from(users).orderBy(desc(users.createdAt))
-    return NextResponse.json(allUsers)
+    const list = await db.select().from(users).where(eq(users.role, role as UserRole)).orderBy(desc(users.createdAt))
+    return NextResponse.json(list)
   } catch (error) {
     console.error("GET /api/users error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
-// POST /api/users — Upsert user on every page load
-// New users get role = null (blank). Admin email gets role = "ADMIN".
-export async function POST(req: Request) {
+// Sync the authenticated Clerk profile. The browser never chooses its Clerk ID or admin status.
+export async function POST() {
   try {
-    const body = await req.json()
-    const { clerkId, email, firstName, lastName, imageUrl } = body
-
-    if (!clerkId || !email) {
-      return NextResponse.json({ error: "Missing clerkId or email" }, { status: 400 })
-    }
-
-    const isAdmin = email.toLowerCase().trim() === ADMIN_EMAIL
-    const existing = await db.select().from(users).where(eq(users.clerkId, clerkId)).limit(1)
-
-    if (existing.length === 0) {
-      // Brand new user — role is NULL (blank) unless admin
-      await db.insert(users).values({
-        clerkId,
-        email,
-        firstName: firstName || null,
-        lastName: lastName || null,
-        imageUrl: imageUrl || null,
-        role: isAdmin ? "ADMIN" : null,
-      })
-    } else {
-      // Existing user — update profile info only
-      const updates: any = {
-        email,
-        firstName: firstName || null,
-        lastName: lastName || null,
-        imageUrl: imageUrl || null,
-        updatedAt: new Date(),
-      }
-      // Force admin if needed
-      if (isAdmin && existing[0].role !== "ADMIN") {
-        updates.role = "ADMIN"
-      }
-      await db.update(users).set(updates).where(eq(users.clerkId, clerkId))
-    }
-
-    const final = await db.select().from(users).where(eq(users.clerkId, clerkId)).limit(1)
-    return NextResponse.json(final[0])
+    const clerkUser = await currentUser()
+    if (!clerkUser) return NextResponse.json({ error: "Authentication required" }, { status: 401 })
+    const saved = await syncUserInDb(clerkUser)
+    if (!saved) return NextResponse.json({ error: "An email address is required" }, { status: 400 })
+    return NextResponse.json(saved)
   } catch (error) {
     console.error("POST /api/users error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
-// PATCH /api/users — First-time role selection (fills the blank role column)
+// One-time role selection for the current authenticated user.
 export async function PATCH(req: Request) {
   try {
-    const body = await req.json()
-    const { clerkId, role } = body
+    const clerkUser = await currentUser()
+    if (!clerkUser) return NextResponse.json({ error: "Authentication required" }, { status: 401 })
 
-    if (!clerkId || !role) return NextResponse.json({ error: "Missing clerkId or role" }, { status: 400 })
-    if (!["CUSTOMER", "VENDOR"].includes(role)) return NextResponse.json({ error: "Invalid role" }, { status: 400 })
+    const dbUser = await syncUserInDb(clerkUser)
+    if (!dbUser) return NextResponse.json({ error: "An email address is required" }, { status: 400 })
 
-    await db.update(users).set({
-      role: role as "CUSTOMER" | "VENDOR",
-      updatedAt: new Date(),
-    }).where(eq(users.clerkId, clerkId))
+    // If role already assigned, treat as success
+    if (dbUser.role) return NextResponse.json({ success: true, role: dbUser.role, alreadyAssigned: true })
 
-    return NextResponse.json({ success: true, role })
-  } catch (error: any) {
+    const body = (await req.json()) as RolePayload
+    if (body.role !== "CUSTOMER" && body.role !== "VENDOR") {
+      return NextResponse.json({ error: "Role must be CUSTOMER or VENDOR" }, { status: 400 })
+    }
+
+    await db.update(users).set({ role: body.role, updatedAt: new Date() }).where(eq(users.id, dbUser.id))
+    return NextResponse.json({ success: true, role: body.role })
+  } catch (error) {
     console.error("PATCH /api/users error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Internal server error") }, { status: 500 })
   }
 }

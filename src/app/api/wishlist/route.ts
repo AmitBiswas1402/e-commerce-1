@@ -1,38 +1,28 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib"
-import { users, wishlists, wishlistItems, products, categories, brands, productImages, productVariants } from "@/db/schema"
+import { wishlists, wishlistItems, products, categories, brands, productImages, productVariants } from "@/db/schema"
 import { eq, and } from "drizzle-orm"
+import { errorMessage, getCurrentDbUser } from "@/lib/authorization"
 
 // Helper to get or create wishlist for a Clerk user
-async function getOrCreateWishlist(clerkId: string) {
+async function getOrCreateWishlist(userId: string) {
   // 1. Get database user UUID
-  const userRows = await db.select().from(users).where(eq(users.clerkId, clerkId)).limit(1)
-  if (userRows.length === 0) {
-    throw new Error(`User not found with clerkId: ${clerkId}`)
-  }
-  const dbUserId = userRows[0].id
-
   // 2. Get or create wishlist row
-  const wishlistRows = await db.select().from(wishlists).where(eq(wishlists.userId, dbUserId)).limit(1)
+  const wishlistRows = await db.select().from(wishlists).where(eq(wishlists.userId, userId)).limit(1)
   if (wishlistRows.length > 0) {
     return wishlistRows[0]
   }
 
-  const newWishlists = await db.insert(wishlists).values({ userId: dbUserId }).returning()
+  const newWishlists = await db.insert(wishlists).values({ userId }).returning()
   return newWishlists[0]
 }
 
-// GET /api/wishlist?clerkId=XXX - Get user's wishlist items
-export async function GET(req: Request) {
+// GET /api/wishlist - Get the authenticated user's wishlist items
+export async function GET() {
   try {
-    const { searchParams } = new URL(req.url)
-    const clerkId = searchParams.get("clerkId")
-
-    if (!clerkId) {
-      return NextResponse.json({ error: "Missing clerkId parameter" }, { status: 400 })
-    }
-
-    const wishlist = await getOrCreateWishlist(clerkId)
+    const current = await getCurrentDbUser()
+    if (!current) return NextResponse.json({ error: "Authentication required" }, { status: 401 })
+    const wishlist = await getOrCreateWishlist(current.id)
 
     // Query wishlist items joined with products
     const items = await db
@@ -72,7 +62,7 @@ export async function GET(req: Request) {
         const inStock = dbVariants.some((v) => v.stock > 0 && v.isActive)
 
         return {
-          id: row.id as any,
+          id: row.id,
           name: row.name,
           description: row.description || "",
           category: row.categoryName || "",
@@ -90,7 +80,7 @@ export async function GET(req: Request) {
     return NextResponse.json(mappedProducts)
   } catch (error) {
     console.error("GET /api/wishlist error:", error)
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to fetch wishlist") }, { status: 500 })
   }
 }
 
@@ -98,13 +88,13 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { clerkId, productId, action } = body
+    const { productId, action } = body as { productId?: string; action?: string }
 
-    if (!clerkId || !productId) {
-      return NextResponse.json({ error: "Missing required fields (clerkId, productId)" }, { status: 400 })
-    }
+    if (!productId) return NextResponse.json({ error: "Missing productId" }, { status: 400 })
+    const current = await getCurrentDbUser()
+    if (!current) return NextResponse.json({ error: "Authentication required" }, { status: 401 })
 
-    const wishlist = await getOrCreateWishlist(clerkId)
+    const wishlist = await getOrCreateWishlist(current.id)
 
     // Handle remove action via POST
     if (action === "remove" || action === "delete") {
@@ -131,7 +121,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, added: true })
   } catch (error) {
     console.error("POST /api/wishlist error:", error)
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to update wishlist") }, { status: 500 })
   }
 }
 
@@ -139,14 +129,13 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const clerkId = searchParams.get("clerkId")
     const productId = searchParams.get("productId")
 
-    if (!clerkId || !productId) {
-      return NextResponse.json({ error: "Missing required fields (clerkId, productId)" }, { status: 400 })
-    }
+    if (!productId) return NextResponse.json({ error: "Missing productId" }, { status: 400 })
+    const current = await getCurrentDbUser()
+    if (!current) return NextResponse.json({ error: "Authentication required" }, { status: 401 })
 
-    const wishlist = await getOrCreateWishlist(clerkId)
+    const wishlist = await getOrCreateWishlist(current.id)
 
     await db
       .delete(wishlistItems)
@@ -160,6 +149,6 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("DELETE /api/wishlist error:", error)
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to update wishlist") }, { status: 500 })
   }
 }

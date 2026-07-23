@@ -1,8 +1,7 @@
 import { db } from "@/lib"
 import { products, categories, brands, productImages, productVariants } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import { PRODUCTS as MOCK_PRODUCTS, type Product } from "./products"
-import { slugify } from "./slug"
+import { type Product } from "./products"
 
 export async function getProductBySlug(slug: string): Promise<Product | undefined> {
   try {
@@ -25,7 +24,7 @@ export async function getProductBySlug(slug: string): Promise<Product | undefine
       .limit(1)
 
     if (row.length === 0) {
-      return MOCK_PRODUCTS.find((p) => slugify(p.name) === slug)
+      return undefined
     }
 
     const item = row[0]
@@ -59,6 +58,6 @@ export async function getProductBySlug(slug: string): Promise<Product | undefine
     }
   } catch (error) {
     console.error("getProductBySlug Drizzle error:", error)
-    return MOCK_PRODUCTS.find((p) => slugify(p.name) === slug)
+    return undefined
   }
 }

@@ -38,6 +38,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 // Interfaces
 interface VendorUser {
@@ -142,10 +152,19 @@ export default function MasterAdminDashboardPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Deletion AlertDialog states
+  const [deletingTarget, setDeletingTarget] = useState<{
+    type: "product" | "category" | "brand"
+    id: string
+    name: string
+  } | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
   // Fetch DB User Details
   useEffect(() => {
     if (isSignedIn && user) {
-      fetch(`/api/users?clerkId=${user.id}`)
+      fetch("/api/users")
         .then((res) => res.json())
         .then((data) => {
           if (data.role) setUserRole(data.role)
@@ -158,11 +177,16 @@ export default function MasterAdminDashboardPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
+      const parseJsonSafe = async (res: Response) => {
+        if (!res.ok) return []
+        return res.json().catch(() => [])
+      }
+
       const [resVendors, resProds, resCats, resBrands] = await Promise.all([
-        fetch("/api/users?role=VENDOR").then((r) => r.json()),
-        fetch("/api/products").then((r) => r.json()),
-        fetch("/api/categories").then((r) => r.json()),
-        fetch("/api/brands").then((r) => r.json()),
+        fetch("/api/users?role=VENDOR").then(parseJsonSafe),
+        fetch("/api/products").then(parseJsonSafe),
+        fetch("/api/categories").then(parseJsonSafe),
+        fetch("/api/brands").then(parseJsonSafe),
       ])
 
       setVendorsList(Array.isArray(resVendors) ? resVendors : [])
@@ -284,20 +308,32 @@ export default function MasterAdminDashboardPage() {
       setIsProductModalOpen(false)
       fetchData()
     } catch (err: any) {
-      alert(err.message || "An error occurred")
+      setErrorMessage(err.message || "An error occurred")
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const handleDeleteProduct = async (id: string) => {
-    if (!confirm("Admin Action: Are you sure you want to delete this product?")) return
+  const confirmDeleteTarget = async () => {
+    if (!deletingTarget) return
+    setIsDeleting(true)
     try {
-      const res = await fetch(`/api/products?id=${id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to delete product")
+      let endpoint = ""
+      if (deletingTarget.type === "product") endpoint = `/api/products?id=${deletingTarget.id}`
+      else if (deletingTarget.type === "category") endpoint = `/api/categories?id=${deletingTarget.id}`
+      else if (deletingTarget.type === "brand") endpoint = `/api/brands?id=${deletingTarget.id}`
+
+      const res = await fetch(endpoint, { method: "DELETE" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error || `Failed to delete ${deletingTarget.type}`)
+      }
+      setDeletingTarget(null)
       fetchData()
     } catch (err: any) {
-      alert(err.message || "Delete failed")
+      setErrorMessage(err.message || "Delete failed")
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -346,20 +382,9 @@ export default function MasterAdminDashboardPage() {
       setIsCategoryModalOpen(false)
       fetchData()
     } catch (err: any) {
-      alert(err.message)
+      setErrorMessage(err.message || "Failed to save category")
     } finally {
       setIsSubmitting(false)
-    }
-  }
-
-  const handleDeleteCategory = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this category?")) return
-    try {
-      const res = await fetch(`/api/categories?id=${id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to delete category")
-      fetchData()
-    } catch (err: any) {
-      alert(err.message)
     }
   }
 
@@ -406,20 +431,9 @@ export default function MasterAdminDashboardPage() {
       setIsBrandModalOpen(false)
       fetchData()
     } catch (err: any) {
-      alert(err.message)
+      setErrorMessage(err.message || "Failed to save brand")
     } finally {
       setIsSubmitting(false)
-    }
-  }
-
-  const handleDeleteBrand = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this brand?")) return
-    try {
-      const res = await fetch(`/api/brands?id=${id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Failed to delete brand")
-      fetchData()
-    } catch (err: any) {
-      alert(err.message)
     }
   }
 
@@ -819,7 +833,7 @@ export default function MasterAdminDashboardPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleDeleteProduct(prod.id)}
+                              onClick={() => setDeletingTarget({ type: "product", id: prod.id, name: prod.name })}
                               className="h-8 w-8 text-rose-500"
                             >
                               <Trash2 className="size-3.5" />
@@ -879,7 +893,7 @@ export default function MasterAdminDashboardPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleDeleteCategory(cat.id)}
+                              onClick={() => setDeletingTarget({ type: "category", id: cat.id, name: cat.name })}
                               className="h-8 w-8 text-rose-500"
                             >
                               <Trash2 className="size-3.5" />
@@ -935,7 +949,7 @@ export default function MasterAdminDashboardPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => handleDeleteBrand(b.id)}
+                              onClick={() => setDeletingTarget({ type: "brand", id: b.id, name: b.name })}
                               className="h-8 w-8 text-rose-500"
                             >
                               <Trash2 className="size-3.5" />
@@ -1137,6 +1151,32 @@ export default function MasterAdminDashboardPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* DELETE CONFIRMATION ALERT DIALOG */}
+      <AlertDialog open={!!deletingTarget} onOpenChange={(open) => !open && setDeletingTarget(null)}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-zinc-900 dark:text-zinc-100 capitalize">
+              Delete {deletingTarget?.type}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-zinc-500 dark:text-zinc-400">
+              Are you sure you want to delete <span className="font-bold text-zinc-800 dark:text-zinc-200">&ldquo;{deletingTarget?.name}&rdquo;</span>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting} className="text-xs font-semibold">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteTarget}
+              disabled={isDeleting}
+              className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
+            >
+              {isDeleting ? "Deleting..." : "Confirm Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

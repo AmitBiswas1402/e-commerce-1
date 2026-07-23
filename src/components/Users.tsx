@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs"
@@ -16,22 +16,13 @@ export default function Users() {
   const pathname = usePathname()
 
   // Sync and fetch user profile strictly from Neon PostgreSQL
-  const syncAndFetchUser = async () => {
+  const syncAndFetchUser = useCallback(async () => {
     if (!isSignedIn || !user) return
-    const email = user.emailAddresses[0]?.emailAddress
-    if (!email) return
-
     try {
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clerkId: user.id,
-          email: email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          imageUrl: user.imageUrl,
-        }),
+        body: JSON.stringify({}),
       })
 
       if (res.ok) {
@@ -46,11 +37,11 @@ export default function Users() {
     } catch (err) {
       console.error("Failed to sync user via REST API:", err)
     }
-  }
+  }, [isSignedIn, pathname, router, user])
 
   useEffect(() => {
-    syncAndFetchUser()
-  }, [isSignedIn, user, pathname])
+    void syncAndFetchUser()
+  }, [syncAndFetchUser])
 
   // Loading state skeleton
   if (!isLoaded) {

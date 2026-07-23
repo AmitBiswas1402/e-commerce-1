@@ -3,6 +3,7 @@ import { db } from "@/lib"
 import { categories } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { v5 as uuidv5 } from "uuid"
+import { errorMessage, requireRole } from "@/lib/authorization"
 
 const UUID_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
@@ -33,6 +34,8 @@ export async function GET() {
 // POST /api/categories - Create a new category
 export async function POST(req: Request) {
   try {
+    const access = await requireRole("ADMIN")
+    if (access.status) return NextResponse.json({ error: "Admin access required" }, { status: access.status })
     const body = await req.json()
     const { name, description, imageUrl, isActive } = body
 
@@ -53,15 +56,17 @@ export async function POST(req: Request) {
     })
 
     return NextResponse.json({ success: true, id: categoryId, name, slug: categorySlug })
-  } catch (error: any) {
+  } catch (error) {
     console.error("POST /api/categories error:", error)
-    return NextResponse.json({ error: error.message || "Failed to create category" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to create category") }, { status: 500 })
   }
 }
 
 // PUT /api/categories - Update an existing category
 export async function PUT(req: Request) {
   try {
+    const access = await requireRole("ADMIN")
+    if (access.status) return NextResponse.json({ error: "Admin access required" }, { status: access.status })
     const body = await req.json()
     const { id, name, slug, description, imageUrl, isActive } = body
 
@@ -84,15 +89,17 @@ export async function PUT(req: Request) {
       .where(eq(categories.id, id))
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error("PUT /api/categories error:", error)
-    return NextResponse.json({ error: error.message || "Failed to update category" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to update category") }, { status: 500 })
   }
 }
 
 // DELETE /api/categories - Delete a category
 export async function DELETE(req: Request) {
   try {
+    const access = await requireRole("ADMIN")
+    if (access.status) return NextResponse.json({ error: "Admin access required" }, { status: access.status })
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
 
@@ -102,8 +109,8 @@ export async function DELETE(req: Request) {
 
     await db.delete(categories).where(eq(categories.id, id))
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error("DELETE /api/categories error:", error)
-    return NextResponse.json({ error: error.message || "Failed to delete category" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to delete category") }, { status: 500 })
   }
 }

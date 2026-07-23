@@ -3,6 +3,7 @@ import { db } from "@/lib"
 import { brands } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { v5 as uuidv5 } from "uuid"
+import { errorMessage, requireRole } from "@/lib/authorization"
 
 const UUID_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
@@ -33,6 +34,8 @@ export async function GET() {
 // POST /api/brands - Create a new brand
 export async function POST(req: Request) {
   try {
+    const access = await requireRole("ADMIN")
+    if (access.status) return NextResponse.json({ error: "Admin access required" }, { status: access.status })
     const body = await req.json()
     const { name, logoUrl, isActive } = body
 
@@ -52,15 +55,17 @@ export async function POST(req: Request) {
     })
 
     return NextResponse.json({ success: true, id: brandId, name, slug: brandSlug })
-  } catch (error: any) {
+  } catch (error) {
     console.error("POST /api/brands error:", error)
-    return NextResponse.json({ error: error.message || "Failed to create brand" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to create brand") }, { status: 500 })
   }
 }
 
 // PUT /api/brands - Update an existing brand
 export async function PUT(req: Request) {
   try {
+    const access = await requireRole("ADMIN")
+    if (access.status) return NextResponse.json({ error: "Admin access required" }, { status: access.status })
     const body = await req.json()
     const { id, name, slug, logoUrl, isActive } = body
 
@@ -82,15 +87,17 @@ export async function PUT(req: Request) {
       .where(eq(brands.id, id))
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error("PUT /api/brands error:", error)
-    return NextResponse.json({ error: error.message || "Failed to update brand" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to update brand") }, { status: 500 })
   }
 }
 
 // DELETE /api/brands - Delete a brand
 export async function DELETE(req: Request) {
   try {
+    const access = await requireRole("ADMIN")
+    if (access.status) return NextResponse.json({ error: "Admin access required" }, { status: access.status })
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
 
@@ -100,8 +107,8 @@ export async function DELETE(req: Request) {
 
     await db.delete(brands).where(eq(brands.id, id))
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error("DELETE /api/brands error:", error)
-    return NextResponse.json({ error: error.message || "Failed to delete brand" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to delete brand") }, { status: 500 })
   }
 }

@@ -1,23 +1,10 @@
 import "dotenv/config"
 import { db } from "../lib"
-import { categories, brands, products, productImages, productVariants } from "../db/schema"
-import { PRODUCTS as MOCK_PRODUCTS } from "../lib/products"
+import { categories, brands } from "../db/schema"
+import { eq } from "drizzle-orm"
 import { v5 as uuidv5 } from "uuid"
 
 const UUID_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
-
-function slugify(name: string): string {
-  return name
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')           // Replace spaces with -
-    .replace(/&/g, '-and-')         // Replace & with 'and'
-    .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
-    .replace(/\-\-+/g, '-')         // Replace multiple - with single -
-    .replace(/^-+/, '')             // Trim - from start of text
-    .replace(/-+$/, '');            // Trim - from end of text
-}
 
 const storeCategories = [
   { name: "Electronics", slug: "electronics", description: "Tech, gadgets, and accessories" },
@@ -33,151 +20,109 @@ const storeCategories = [
 ]
 
 const storeBrands = [
+  // Electronics & Tech
   { name: "Sony", slug: "sony" },
-  { name: "PlayStation", slug: "playstation" },
-  { name: "Generic", slug: "generic" },
-  { name: "Nike", slug: "nike" },
   { name: "Samsung", slug: "samsung" },
+  { name: "Apple", slug: "apple" },
+  { name: "Bose", slug: "bose" },
+  { name: "Logitech", slug: "logitech" },
+  { name: "Dell", slug: "dell" },
+  { name: "HP", slug: "hp" },
+
+  // Apparel & Fashion
+  { name: "Nike", slug: "nike" },
+  { name: "Adidas", slug: "adidas" },
+  { name: "Puma", slug: "puma" },
+  { name: "Levi's", slug: "levis" },
+  { name: "Zara", slug: "zara" },
+  { name: "H&M", slug: "hm" },
+  { name: "Under Armour", slug: "under-armour" },
+
+  // Kitchen & Home Appliances
   { name: "KitchenCraft", slug: "kitchencraft" },
+  { name: "Philips", slug: "philips" },
+  { name: "Prestige", slug: "prestige" },
+  { name: "Wonderchef", slug: "wonderchef" },
+  { name: "Hawkins", slug: "hawkins" },
+
+  // Home & Furniture
+  { name: "IKEA", slug: "ikea" },
+  { name: "Godrej Interio", slug: "godrej-interio" },
+  { name: "Urban Ladder", slug: "urban-ladder" },
+
+  // Beauty & Personal Care
+  { name: "L'Oréal", slug: "loreal" },
+  { name: "Nivea", slug: "nivea" },
+  { name: "Maybelline", slug: "maybelline" },
+  { name: "Dove", slug: "dove" },
+
+  // Sports & Outdoors
+  { name: "Decathlon", slug: "decathlon" },
+  { name: "Yonex", slug: "yonex" },
+  { name: "Wildcraft", slug: "wildcraft" },
+
+  // Gym & Fitness
   { name: "FitPro", slug: "fitpro" },
+  { name: "Bowflex", slug: "bowflex" },
+  { name: "Cultsport", slug: "cultsport" },
+
+  // Books & Stationery
+  { name: "Moleskine", slug: "moleskine" },
+  { name: "Classmate", slug: "classmate" },
+  { name: "Parker", slug: "parker" },
+  { name: "Faber-Castell", slug: "faber-castell" },
+
+  // Video Games & Consoles
+  { name: "PlayStation", slug: "playstation" },
+  { name: "Microsoft", slug: "microsoft" },
+  { name: "Nintendo", slug: "nintendo" },
+  { name: "Razer", slug: "razer" },
+
+  // General / Unbranded
+  { name: "Generic", slug: "generic" },
 ]
 
-function getBrandName(productName: string): string {
-  if (productName.toLowerCase().includes("sony")) return "Sony";
-  if (productName.toLowerCase().includes("playstation") || productName.toLowerCase().includes("dualsense")) return "PlayStation";
-  if (productName.toLowerCase().includes("shoes") || productName.toLowerCase().includes("running")) return "Nike";
-  if (productName.toLowerCase().includes("cookware") || productName.toLowerCase().includes("stainless steel")) return "KitchenCraft";
-  if (productName.toLowerCase().includes("dumbbell") || productName.toLowerCase().includes("fitness")) return "FitPro";
-  return "Generic";
-}
-
 async function main() {
-  console.log("Starting Neon PostgreSQL database seeding...")
+  console.log("Seeding Categories and Brands to Neon PostgreSQL...")
 
   try {
-    // 1. Clean old data in safe sequence (due to foreign key constraints)
-    console.log("Cleaning database tables...")
-    await db.delete(productImages)
-    await db.delete(productVariants)
-    await db.delete(products)
-    await db.delete(brands)
-    await db.delete(categories)
-
-    // 2. Seed Categories
-    console.log("Inserting categories...")
-    const categoryMap = new Map<string, string>();
+    // 1. Seed Categories safely
+    console.log("Syncing categories...")
     for (const cat of storeCategories) {
       const id = uuidv5(`cat-${cat.slug}`, UUID_NAMESPACE)
-      await db.insert(categories).values({
-        id,
-        name: cat.name,
-        slug: cat.slug,
-        description: cat.description,
-        isActive: true,
-      })
-      categoryMap.set(cat.name.toLowerCase(), id);
-      console.log(`Seeded Category: ${cat.name}`)
+      const [existing] = await db.select().from(categories).where(eq(categories.slug, cat.slug)).limit(1)
+      if (!existing) {
+        await db.insert(categories).values({
+          id,
+          name: cat.name,
+          slug: cat.slug,
+          description: cat.description,
+          isActive: true,
+        })
+        console.log(`+ Added Category: ${cat.name}`)
+      }
     }
 
-    // 3. Seed Brands
-    console.log("Inserting brands...")
-    const brandMap = new Map<string, string>();
+    // 2. Seed Brands safely
+    console.log("Syncing brands...")
     for (const brd of storeBrands) {
       const id = uuidv5(`brand-${brd.slug}`, UUID_NAMESPACE)
-      await db.insert(brands).values({
-        id,
-        name: brd.name,
-        slug: brd.slug,
-        isActive: true,
-      })
-      brandMap.set(brd.name.toLowerCase(), id);
-      console.log(`Seeded Brand: ${brd.name}`)
-    }
-
-    // 4. Seed Products, Images, and Variants from Mock Products
-    console.log("Inserting products, images, and variants...")
-    for (const mockProd of MOCK_PRODUCTS) {
-      const prodSlug = slugify(mockProd.name)
-      const productId = uuidv5(`prod-${prodSlug}`, UUID_NAMESPACE)
-
-      // Match Category
-      const catKey = mockProd.category.toLowerCase();
-      let categoryId = categoryMap.get(catKey);
-      if (!categoryId) {
-        // Fallback or dynamically create category
-        const catSlug = slugify(mockProd.category);
-        categoryId = uuidv5(`cat-${catSlug}`, UUID_NAMESPACE)
-        await db.insert(categories).values({
-          id: categoryId,
-          name: mockProd.category,
-          slug: catSlug,
-          description: `${mockProd.category} category`,
-          isActive: true,
-        })
-        categoryMap.set(catKey, categoryId);
-        console.log(`Dynamically Created Category: ${mockProd.category}`)
-      }
-
-      // Match Brand
-      const brandName = getBrandName(mockProd.name);
-      const brandKey = brandName.toLowerCase();
-      let brandId = brandMap.get(brandKey);
-      if (!brandId) {
-        const brandSlug = slugify(brandName);
-        brandId = uuidv5(`brand-${brandSlug}`, UUID_NAMESPACE)
+      const [existing] = await db.select().from(brands).where(eq(brands.slug, brd.slug)).limit(1)
+      if (!existing) {
         await db.insert(brands).values({
-          id: brandId,
-          name: brandName,
-          slug: brandSlug,
+          id,
+          name: brd.name,
+          slug: brd.slug,
           isActive: true,
         })
-        brandMap.set(brandKey, brandId);
-        console.log(`Dynamically Created Brand: ${brandName}`)
+        console.log(`+ Added Brand: ${brd.name}`)
       }
-
-      // Insert Product
-      await db.insert(products).values({
-        id: productId,
-        categoryId: categoryId,
-        brandId: brandId,
-        name: mockProd.name,
-        slug: prodSlug,
-        description: mockProd.description,
-        status: "PUBLISHED" as const,
-        isFeatured: mockProd.badge === "Best Seller" || mockProd.badge === "Top Rated" || mockProd.badge === "Hot Deal",
-        isNewArrival: mockProd.badge === "New",
-      })
-      console.log(`Seeded Product: ${mockProd.name}`)
-
-      // Insert Images
-      if (mockProd.images && mockProd.images.length > 0) {
-        for (let i = 0; i < mockProd.images.length; i++) {
-          const imgUrl = mockProd.images[i];
-          await db.insert(productImages).values({
-            productId: productId,
-            imageUrl: imgUrl,
-            sortOrder: i,
-          })
-        }
-        console.log(`  Seeded ${mockProd.images.length} images for product`)
-      }
-
-      // Insert Default Variant
-      await db.insert(productVariants).values({
-        productId: productId,
-        sku: `SKU-${prodSlug.substring(0, 30).toUpperCase()}-DEFAULT`,
-        price: mockProd.price,
-        compareAtPrice: mockProd.originalPrice,
-        stock: mockProd.inStock ? 100 : 0,
-        isActive: true,
-      })
-      console.log(`  Seeded default variant for product`)
     }
 
-    console.log("Database seeded successfully with Categories, Brands, Products, Images, and Variants!")
+    console.log("Categories and Brands seeded successfully without touching real products!")
     process.exit(0)
   } catch (err) {
-    console.error("Seeding failed with error:", err)
+    console.error("Seeding failed:", err)
     process.exit(1)
   }
 }

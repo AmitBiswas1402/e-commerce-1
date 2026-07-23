@@ -18,13 +18,14 @@ function FeaturingContent() {
 
   useEffect(() => {
     fetch("/api/products")
-      .then((res) => res.json())
+      .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
-        setProductsList(data);
+        setProductsList(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch((err) => {
         console.error("Failed to load products via REST API:", err);
+        setProductsList([]);
         setLoading(false);
       });
   }, []);

@@ -1,14 +1,23 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Geist, Geist_Mono } from "next/font/google";
-import { cn } from "@/lib/utils";
 import { ClerkProvider } from "@clerk/nextjs";
 import Navbar from "@/components/Navbar";
 import Providers from "@/components/Providers";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+import {
+  Geist,
+  Geist_Mono,
+} from "next/font/google";
 
-const mono = Geist_Mono({subsets:['latin'],variable:'--font-mono'});
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const mono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
   title: "E-commerce App",
@@ -22,9 +31,9 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" suppressHydrationWarning className={cn("font-sans", geist.variable)}>
+      <html lang="en" suppressHydrationWarning className={`${geist.variable} ${mono.variable}`}>
         <body
-          className={`${geist.variable} ${mono.variable} min-h-full flex flex-col`}
+          className="min-h-full flex flex-col font-sans"
           suppressHydrationWarning
         >
           <Providers>

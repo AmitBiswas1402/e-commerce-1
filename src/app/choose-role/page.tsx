@@ -22,23 +22,11 @@ export default function ChooseRolePage() {
 
     // Check user role in Neon PostgreSQL right after SSO callback / login
     const checkDbUserStatus = async () => {
-      const email = user.emailAddresses[0]?.emailAddress
-      if (!email) {
-        setIsCheckingUser(false)
-        return
-      }
-
       try {
         const res = await fetch("/api/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clerkId: user.id,
-            email: email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            imageUrl: user.imageUrl,
-          }),
+        body: JSON.stringify({}),
         })
 
         if (res.ok) {
@@ -60,28 +48,30 @@ export default function ChooseRolePage() {
     checkDbUserStatus()
   }, [isLoaded, isSignedIn, user])
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
   const handleConfirmRole = async () => {
     if (!isSignedIn || !user) return
     setIsSubmitting(true)
+    setErrorMsg(null)
 
     try {
       const res = await fetch("/api/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clerkId: user.id,
-          role: selectedRole,
-        }),
+        body: JSON.stringify({ role: selectedRole }),
       })
 
       if (!res.ok) {
-        throw new Error("Failed to save account role in Neon DB")
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error || "Failed to save account role in Neon DB")
       }
 
       // Role updated in Neon DB! Redirect directly to store homepage
       window.location.href = "/"
-    } catch (err: any) {
-      alert(err.message || "Failed to complete onboarding")
+    } catch (err: unknown) {
+      console.error("Onboarding role save failed:", err)
+      setErrorMsg(err instanceof Error ? err.message : "Failed to complete onboarding. Please try again.")
       setIsSubmitting(false)
     }
   }
@@ -183,6 +173,13 @@ export default function ChooseRolePage() {
             )
           })}
         </div>
+
+        {/* Inline Error Message */}
+        {errorMsg && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/30 dark:border-rose-800 px-4 py-3 text-xs font-semibold text-rose-600 dark:text-rose-400">
+            {errorMsg}
+          </div>
+        )}
 
         {/* Submit Action Button */}
         <div className="pt-2">

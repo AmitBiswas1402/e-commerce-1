@@ -23,7 +23,7 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isSignedIn && user) {
       // Fetch from Postgres via REST API
-      fetch(`/api/wishlist?clerkId=${user.id}`)
+      fetch("/api/wishlist")
         .then((res) => res.json())
         .then((data) => {
           if (Array.isArray(data)) {
@@ -76,7 +76,6 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            clerkId: user.id,
             productId: product.id,
             action,
           }),
@@ -110,7 +109,6 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            clerkId: user.id,
             productId,
             action: "remove",
           }),

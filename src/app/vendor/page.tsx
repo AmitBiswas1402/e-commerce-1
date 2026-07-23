@@ -32,6 +32,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface ProductItem {
   id: string
@@ -99,7 +109,7 @@ export default function VendorDashboardPage() {
   // Fetch DB User Details
   useEffect(() => {
     if (isSignedIn && user) {
-      fetch(`/api/users?clerkId=${user.id}`)
+      fetch("/api/users")
         .then((res) => res.json())
         .then((data) => {
           if (data.role) setUserRole(data.role)
@@ -113,10 +123,15 @@ export default function VendorDashboardPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
+      const parseJsonSafe = async (res: Response) => {
+        if (!res.ok) return []
+        return res.json().catch(() => [])
+      }
+
       const [resProds, resCats, resBrands] = await Promise.all([
-        fetch("/api/products").then((r) => r.json()),
-        fetch("/api/categories").then((r) => r.json()),
-        fetch("/api/brands").then((r) => r.json()),
+        fetch("/api/products").then(parseJsonSafe),
+        fetch("/api/categories").then(parseJsonSafe),
+        fetch("/api/brands").then(parseJsonSafe),
       ])
 
       setProducts(Array.isArray(resProds) ? resProds : [])
@@ -133,11 +148,11 @@ export default function VendorDashboardPage() {
     fetchData()
   }, [])
 
-  // Filter products created by this specific vendor (or all if admin)
+  // Filter products created by this specific vendor or existing store catalog items (or all if admin)
   const myProducts = products.filter((p) => {
     if (userRole === "ADMIN") return true // Admin sees all
-    if (!dbUserId) return true // Fallback view
-    return p.vendorId === dbUserId || !p.vendorId // Include vendor's items
+    if (!p.vendorId) return true // Show existing store catalog products
+    return p.vendorId === dbUserId
   })
 
   const filteredProducts = myProducts.filter((p) =>
@@ -149,7 +164,11 @@ export default function VendorDashboardPage() {
   const totalStockCount = myProducts.reduce((sum, p) => sum + (p.stock || 0), 0)
   const totalValue = myProducts.reduce((sum, p) => sum + (p.price * (p.stock || 0)), 0)
 
-  // Product Modal Handlers
+  // AlertDialog state for deleting product
+  const [deletingProduct, setDeletingProduct] = useState<ProductItem | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
   const openNewProductModal = () => {
     setEditingProduct(null)
     setProdForm({
@@ -196,7 +215,6 @@ export default function VendorDashboardPage() {
         name: prodForm.name,
         description: prodForm.description,
         categoryId: prodForm.categoryId,
-        vendorId: dbUserId, // tag with this vendor's ID
         brandId: prodForm.brandId,
         price: parseFloat(prodForm.price) || 0,
         compareAtPrice: prodForm.compareAtPrice ? parseFloat(prodForm.compareAtPrice) : undefined,
@@ -222,20 +240,24 @@ export default function VendorDashboardPage() {
       setIsProductModalOpen(false)
       fetchData()
     } catch (err: any) {
-      alert(err.message || "An error occurred")
+      setErrorMessage(err.message || "An error occurred")
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const handleDeleteProduct = async (id: string) => {
-    if (!confirm("Are you sure you want to remove this product listing?")) return
+  const confirmDeleteProduct = async () => {
+    if (!deletingProduct) return
+    setIsDeleting(true)
     try {
-      const res = await fetch(`/api/products?id=${id}`, { method: "DELETE" })
+      const res = await fetch(`/api/products?id=${deletingProduct.id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to delete product")
+      setDeletingProduct(null)
       fetchData()
     } catch (err: any) {
-      alert(err.message || "Delete failed")
+      setErrorMessage(err.message || "Delete failed")
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -319,7 +341,7 @@ export default function VendorDashboardPage() {
               className="gap-1.5 rounded-full bg-linear-to-r from-amber-600 to-purple-600 px-4 text-xs font-bold text-white shadow-sm hover:from-amber-500 hover:to-purple-500"
             >
               <Plus className="size-4" />
-              <span>+ List New Product</span>
+              <span>List New Product</span>
             </Button>
           </div>
         </div>
@@ -500,7 +522,7 @@ export default function VendorDashboardPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleDeleteProduct(prod.id)}
+                            onClick={() => setDeletingProduct(prod)}
                             className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                           >
                             <Trash2 className="size-3.5" />
@@ -679,6 +701,32 @@ export default function VendorDashboardPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* DELETE CONFIRMATION ALERT DIALOG */}
+      <AlertDialog open={!!deletingProduct} onOpenChange={(open) => !open && setDeletingProduct(null)}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+              Remove Product Listing?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-zinc-500 dark:text-zinc-400">
+              Are you sure you want to remove <span className="font-bold text-zinc-800 dark:text-zinc-200">&ldquo;{deletingProduct?.name}&rdquo;</span> from your store catalog? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting} className="text-xs font-semibold">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteProduct}
+              disabled={isDeleting}
+              className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
+            >
+              {isDeleting ? "Removing..." : "Remove Listing"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server"
 import { db } from "@/lib"
 import { products, categories, brands, productImages, productVariants } from "@/db/schema"
 import { eq } from "drizzle-orm"
-import { PRODUCTS as MOCK_PRODUCTS } from "@/lib/products"
 import { v5 as uuidv5 } from "uuid"
+import { errorMessage, getCurrentDbUser, requireRole } from "@/lib/authorization"
 
 const UUID_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
@@ -23,6 +23,7 @@ function slugify(name: string): string {
 // GET /api/products - Fetch products list from Neon DB (with relational joins)
 export async function GET() {
   try {
+    const current = await getCurrentDbUser()
     const rows = await db
       .select({
         id: products.id,
@@ -42,13 +43,14 @@ export async function GET() {
       .leftJoin(categories, eq(products.categoryId, categories.id))
       .leftJoin(brands, eq(products.brandId, brands.id))
 
-    if (rows.length === 0) {
-      // Fallback to static mock products if database is empty
-      return NextResponse.json(MOCK_PRODUCTS)
-    }
+    const visibleRows = rows.filter((row) =>
+      current?.role === "ADMIN" ||
+      row.status === "PUBLISHED" ||
+      (current?.role === "VENDOR" && (!row.vendorId || row.vendorId === current.id))
+    )
 
     const mappedProducts = await Promise.all(
-      rows.map(async (row) => {
+      visibleRows.map(async (row) => {
         // Fetch child images
         const dbImages = await db
           .select()
@@ -95,19 +97,20 @@ export async function GET() {
     return NextResponse.json(mappedProducts)
   } catch (error) {
     console.error("GET /api/products error:", error)
-    return NextResponse.json(MOCK_PRODUCTS)
+    return NextResponse.json([], { status: 200 })
   }
 }
 
 // POST /api/products - Create a new product
 export async function POST(req: Request) {
   try {
+    const access = await requireRole("VENDOR", "ADMIN")
+    if (access.status) return NextResponse.json({ error: "Vendor or admin access required" }, { status: access.status })
     const body = await req.json()
     const {
       name,
       description,
       categoryId,
-      vendorId,
       brandId,
       price,
       compareAtPrice,
@@ -132,7 +135,7 @@ export async function POST(req: Request) {
     await db.insert(products).values({
       id: productId,
       categoryId,
-      vendorId: vendorId || null,
+      vendorId: access.user.id,
       brandId: brandId || null,
       name,
       slug: prodSlug,
@@ -171,22 +174,23 @@ export async function POST(req: Request) {
     })
 
     return NextResponse.json({ success: true, id: productId, slug: prodSlug })
-  } catch (error: any) {
+  } catch (error) {
     console.error("POST /api/products error:", error)
-    return NextResponse.json({ error: error.message || "Failed to create product" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to create product") }, { status: 500 })
   }
 }
 
 // PUT /api/products - Update an existing product
 export async function PUT(req: Request) {
   try {
+    const access = await requireRole("VENDOR", "ADMIN")
+    if (access.status) return NextResponse.json({ error: "Vendor or admin access required" }, { status: access.status })
     const body = await req.json()
     const {
       id,
       name,
       description,
       categoryId,
-      vendorId,
       brandId,
       price,
       compareAtPrice,
@@ -203,6 +207,11 @@ export async function PUT(req: Request) {
         { status: 400 }
       )
     }
+    const [existing] = await db.select({ vendorId: products.vendorId }).from(products).where(eq(products.id, id)).limit(1)
+    if (!existing) return NextResponse.json({ error: "Product not found" }, { status: 404 })
+    if (access.user.role === "VENDOR" && existing.vendorId && existing.vendorId !== access.user.id) {
+      return NextResponse.json({ error: "You can only edit your own products" }, { status: 403 })
+    }
 
     const prodSlug = slugify(name)
 
@@ -214,7 +223,7 @@ export async function PUT(req: Request) {
         slug: prodSlug,
         description: description || null,
         categoryId,
-        vendorId: vendorId || null,
+        vendorId: existing.vendorId,
         brandId: brandId || null,
         status: status || ("PUBLISHED" as const),
         isFeatured: Boolean(isFeatured),
@@ -254,20 +263,27 @@ export async function PUT(req: Request) {
     })
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error("PUT /api/products error:", error)
-    return NextResponse.json({ error: error.message || "Failed to update product" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to update product") }, { status: 500 })
   }
 }
 
 // DELETE /api/products - Delete product
 export async function DELETE(req: Request) {
   try {
+    const access = await requireRole("VENDOR", "ADMIN")
+    if (access.status) return NextResponse.json({ error: "Vendor or admin access required" }, { status: access.status })
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
 
     if (!id) {
       return NextResponse.json({ error: "Product ID is required" }, { status: 400 })
+    }
+    const [existing] = await db.select({ vendorId: products.vendorId }).from(products).where(eq(products.id, id)).limit(1)
+    if (!existing) return NextResponse.json({ error: "Product not found" }, { status: 404 })
+    if (access.user.role === "VENDOR" && existing.vendorId && existing.vendorId !== access.user.id) {
+      return NextResponse.json({ error: "You can only delete your own products" }, { status: 403 })
     }
 
     // Delete associated images & variants first (or cascade handles it)
@@ -276,8 +292,8 @@ export async function DELETE(req: Request) {
     await db.delete(products).where(eq(products.id, id))
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error("DELETE /api/products error:", error)
-    return NextResponse.json({ error: error.message || "Failed to delete product" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage(error, "Failed to delete product") }, { status: 500 })
   }
 }
