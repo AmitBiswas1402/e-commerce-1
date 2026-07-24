@@ -48,7 +48,9 @@ export default function Navbar() {
       <div className="mx-auto flex max-w-7xl h-16 items-center justify-between px-4 sm:px-6 lg:px-8 gap-4">
         {/* Brand Logo (Left) */}
         <div className="shrink-0">
-          <Logo size="md" />
+          <Link href="/">
+            <Logo size="md" />
+          </Link>
         </div>
 
         {/* Snug SearchBar (Center) */}
@@ -73,7 +75,8 @@ export default function Navbar() {
           <div className="flex items-center justify-between overflow-x-auto gap-4 sm:gap-6 md:gap-8 py-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] scrollbar-none w-full">
             {heroSec.map((item) => {
               const categoryName = item.title || item.category || "";
-              const Icon = (categoryName && CATEGORY_ICONS[categoryName]) || ShoppingBag;
+              const Icon =
+                (categoryName && CATEGORY_ICONS[categoryName]) || ShoppingBag;
               return (
                 <div
                   key={item.id}

@@ -8,8 +8,9 @@ export interface ProductReview {
 }
 
 export interface Product {
-  id: number;
+  id: number | string;
   name: string;
+  slug?: string;
   description: string;
   category: string;
   price: number;

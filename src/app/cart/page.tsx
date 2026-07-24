@@ -3,22 +3,42 @@
 import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { Trash2, Plus, Minus, ArrowRight, ShoppingBag, Percent, ShieldCheck } from "lucide-react"
+import { useUser } from "@clerk/nextjs"
+import { Trash2, Plus, Minus, ArrowRight, ShoppingBag, Percent, ShieldCheck, Loader2, CreditCard } from "lucide-react"
 import { useCart } from "@/context/CartContext"
 import { Button } from "@/components/ui/button"
 import { slugify } from "@/lib/slug"
 
+declare global {
+  interface Window {
+    Razorpay: any
+  }
+}
+
 export default function CartPage() {
-  const { cart, removeFromCart, updateQuantity, cartSubtotal, cartCount } = useCart()
+  const { user } = useUser()
+  const { cart, removeFromCart, updateQuantity, clearCart, cartSubtotal, cartCount } = useCart()
   const [mounted, setMounted] = useState(false)
   const [couponCode, setCouponCode] = useState("")
   const [discountAmount, setDiscountAmount] = useState(0)
   const [couponError, setCouponError] = useState("")
   const [couponSuccess, setCouponSuccess] = useState("")
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
+  const [paymentError, setPaymentError] = useState("")
 
-  // Prevent hydration mismatch
+  // Prevent hydration mismatch & load Razorpay Checkout Script
   useEffect(() => {
     setMounted(true)
+    const script = document.createElement("script")
+    script.src = "https://checkout.razorpay.com/v1/checkout.js"
+    script.async = true
+    document.body.appendChild(script)
+
+    return () => {
+      if (document.body.contains(script)) {
+        document.body.removeChild(script)
+      }
+    }
   }, [])
 
   if (!mounted) {
@@ -34,7 +54,7 @@ export default function CartPage() {
 
   const shipping = cartSubtotal >= 499 || cartSubtotal === 0 ? 0 : 99
   const tax = Math.round(cartSubtotal * 0.05) // 5% GST
-  const total = cartSubtotal - discountAmount + shipping + tax
+  const total = Math.max(0, cartSubtotal - discountAmount + shipping + tax)
 
   const handleApplyCoupon = (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,6 +69,125 @@ export default function CartPage() {
       setCouponError("Please enter a coupon code.")
     } else {
       setCouponError("Invalid coupon code. Try 'VELORA10'")
+    }
+  }
+
+  const handleProceedToRazorpayCheckout = async () => {
+    if (cart.length === 0) return
+    setIsProcessingPayment(true)
+    setPaymentError("")
+
+    try {
+      // 1. Create Razorpay order on server
+      const res = await fetch("/api/razorpay/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: total,
+          currency: "INR",
+          notes: {
+            itemCount: cartCount,
+            userEmail: user?.primaryEmailAddress?.emailAddress || "Guest",
+          },
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to initiate Razorpay checkout")
+      }
+
+      const { orderId, amount, currency, keyId } = data
+
+      // 2. Setup Razorpay options
+      const options = {
+        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_T6CY5sQOs43USL",
+        amount: amount,
+        currency: currency || "INR",
+        name: "Velora Market",
+        description: `Order Payment (${cartCount} items)`,
+        image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=200&auto=format&fit=crop",
+        order_id: orderId,
+        handler: async function (response: any) {
+          try {
+            // 3. Verify signature on server
+            const verifyRes = await fetch("/api/razorpay/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(response),
+            })
+
+            const verifyData = await verifyRes.json()
+            if (!verifyRes.ok || !verifyData.success) {
+              throw new Error(verifyData.error || "Payment signature verification failed")
+            }
+
+            // 4. Store receipt data in sessionStorage for receipt view
+            const savedOrder = {
+              paymentId: response.razorpay_payment_id,
+              orderId: response.razorpay_order_id,
+              amount: total,
+              subtotal: cartSubtotal,
+              discount: discountAmount,
+              shipping: shipping,
+              tax: tax,
+              items: cart.map(item => ({
+                id: item.product.id,
+                name: item.product.name,
+                price: item.product.price,
+                quantity: item.quantity,
+                image: item.product.images[0] || "/placeholder.jpg",
+              })),
+              date: new Date().toLocaleDateString("en-IN", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+              email: user?.primaryEmailAddress?.emailAddress,
+              name: user?.fullName || user?.firstName || "Customer",
+            }
+            sessionStorage.setItem("velora_last_order", JSON.stringify(savedOrder))
+
+            // 5. Clear cart & redirect to success page
+            clearCart()
+            window.location.href = `/checkout/success?payment_id=${response.razorpay_payment_id}&order_id=${response.razorpay_order_id}`
+          } catch (verifyErr: any) {
+            console.error("Verification error:", verifyErr)
+            setPaymentError(verifyErr.message || "Payment verification failed")
+            setIsProcessingPayment(false)
+          }
+        },
+        prefill: {
+          name: user?.fullName || user?.firstName || "",
+          email: user?.primaryEmailAddress?.emailAddress || "",
+        },
+        theme: {
+          color: "#4f46e5",
+        },
+        modal: {
+          ondismiss: function () {
+            setIsProcessingPayment(false)
+          },
+        },
+      }
+
+      if (typeof window !== "undefined" && window.Razorpay) {
+        const rzp = new window.Razorpay(options)
+        rzp.on("payment.failed", function (response: any) {
+          console.error("Razorpay Payment Failed:", response.error)
+          setPaymentError(response.error.description || "Payment failed or was cancelled")
+          setIsProcessingPayment(false)
+        })
+        rzp.open()
+      } else {
+        throw new Error("Razorpay SDK failed to load. Please refresh and try again.")
+      }
+    } catch (err: any) {
+      console.error("Checkout launch error:", err)
+      setPaymentError(err.message || "An unexpected error occurred launching checkout")
+      setIsProcessingPayment(false)
     }
   }
 
@@ -99,77 +238,73 @@ export default function CartPage() {
                   <div className="relative w-full sm:w-28 aspect-[4/3] sm:aspect-square rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 shrink-0">
                     <Link href={`/${slugify(item.product.name)}`} className="absolute inset-0 block">
                       <Image
-                        src={item.product.images[0]}
+                        src={item.product.images[0] || "/placeholder.jpg"}
                         alt={item.product.name}
                         fill
-                        sizes="(max-width: 640px) 100vw, 112px"
-                        className="object-cover"
+                        className="object-cover hover:scale-105 transition-transform duration-300"
                       />
                     </Link>
                   </div>
 
-                  {/* Item info */}
-                  <div className="flex-1 flex flex-col justify-between py-0.5 min-w-0">
-                    <div className="flex justify-between items-start gap-4">
-                      <div>
-                        <span className="inline-block rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-semibold text-zinc-600 dark:text-zinc-400 mb-1.5">
-                          {item.product.category}
-                        </span>
+                  {/* Details */}
+                  <div className="flex flex-1 flex-col justify-between min-w-0">
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
                         <Link href={`/${slugify(item.product.name)}`}>
-                          <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-50 leading-snug line-clamp-1 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                          <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 hover:text-indigo-600 dark:hover:text-indigo-400 line-clamp-1 transition">
                             {item.product.name}
                           </h3>
                         </Link>
-                        <p className="text-xs text-zinc-400 dark:text-zinc-500 line-clamp-1 mt-0.5">
-                          {item.product.description}
-                        </p>
+                        <button
+                          onClick={() => removeFromCart(item.product.id)}
+                          className="text-zinc-400 hover:text-rose-500 transition p-1"
+                          aria-label="Remove item"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
                       </div>
 
-                      {/* Remove Button */}
-                      <button
-                        onClick={() => removeFromCart(item.product.id)}
-                        className="text-zinc-400 hover:text-red-500 dark:text-zinc-500 dark:hover:text-red-400 p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors shrink-0"
-                        title="Remove item"
-                        aria-label="Remove item"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-1">
+                        {item.product.category}
+                      </p>
                     </div>
 
-                    {/* Quantity and Price */}
-                    <div className="flex flex-wrap items-center justify-between gap-4 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/60">
-                      {/* Quantity Selector */}
-                      <div className="flex items-center rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-0.5 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mt-4 pt-2 border-t border-zinc-100 dark:border-zinc-800/50">
+                      {/* Quantity Controls */}
+                      <div className="flex items-center rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 p-1">
                         <button
                           onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-white dark:hover:bg-zinc-800 hover:shadow-sm transition-all"
-                          aria-label="Decrease quantity"
+                          className="flex size-7 items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-800 transition active:scale-90"
                         >
-                          <Minus className="size-3" />
+                          <Minus className="size-3.5" />
                         </button>
-                        <span className="px-3 py-0.5 text-xs font-semibold text-zinc-800 dark:text-zinc-200 min-w-[2rem] text-center">
+                        <span className="w-8 text-center text-xs font-bold text-zinc-900 dark:text-zinc-50">
                           {item.quantity}
                         </span>
                         <button
                           onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-white dark:hover:bg-zinc-800 hover:shadow-sm transition-all"
-                          aria-label="Increase quantity"
+                          className="flex size-7 items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-800 transition active:scale-90"
                         >
-                          <Plus className="size-3" />
+                          <Plus className="size-3.5" />
                         </button>
                       </div>
 
-                      {/* Pricing */}
+                      {/* Price */}
                       <div className="text-right">
-                        <div className="flex items-baseline justify-end gap-1.5">
+                        <div className="flex items-baseline gap-2">
                           <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
                             ₹{(item.product.price * item.quantity).toLocaleString("en-IN")}
                           </span>
+                          {item.product.originalPrice > item.product.price && (
+                            <span className="text-xs text-zinc-400 line-through">
+                              ₹{(item.product.originalPrice * item.quantity).toLocaleString("en-IN")}
+                            </span>
+                          )}
                         </div>
-                        {item.quantity > 1 && (
-                          <p className="text-[10px] text-zinc-400 dark:text-zinc-500">
-                            (₹{item.product.price.toLocaleString("en-IN")} each)
-                          </p>
+                        {discountPercent > 0 && (
+                          <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                            {discountPercent}% OFF
+                          </span>
                         )}
                       </div>
                     </div>
@@ -244,16 +379,37 @@ export default function CartPage() {
                 </span>
               </div>
 
+              {/* Error banner */}
+              {paymentError && (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/40 p-3 text-xs font-medium text-red-600 dark:text-red-400">
+                  {paymentError}
+                </div>
+              )}
+
               {/* Checkout Button */}
-              <Button className="w-full mt-6 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl py-6 font-semibold flex items-center justify-center gap-2 group transition-all duration-150 hover:-translate-y-0.5 shadow-md shadow-indigo-100 dark:shadow-none">
-                Proceed to Checkout
-                <ArrowRight className="size-4 group-hover:translate-x-1 transition-transform" />
+              <Button
+                onClick={handleProceedToRazorpayCheckout}
+                disabled={isProcessingPayment}
+                className="w-full mt-6 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl py-6 font-semibold flex items-center justify-center gap-2 group transition-all duration-150 hover:-translate-y-0.5 shadow-md shadow-indigo-100 dark:shadow-none"
+              >
+                {isProcessingPayment ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Connecting to Razorpay...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="size-4" />
+                    Pay via Razorpay
+                    <ArrowRight className="size-4 group-hover:translate-x-1 transition-transform" />
+                  </>
+                )}
               </Button>
 
               {/* Trust statement */}
               <div className="flex items-center gap-2 mt-4 text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">
                 <ShieldCheck className="size-4 text-emerald-500 flex-shrink-0" />
-                <span>100% Safe Payments. Verified secure transactions.</span>
+                <span>100% Safe Payments. Verified Razorpay Gateway.</span>
               </div>
             </div>
 

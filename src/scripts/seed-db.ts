@@ -71,6 +71,10 @@ const storeBrands = [
   { name: "Classmate", slug: "classmate" },
   { name: "Parker", slug: "parker" },
   { name: "Faber-Castell", slug: "faber-castell" },
+  { name: "Penguin", slug: "penguin" },
+  { name: "HarperCollins", slug: "harpercollins" },
+  { name: "Simon & Schuster", slug: "simon-and-schuster" },
+  { name: "Grand Central Publishing", slug: "grand-central-publishing" },
 
   // Video Games & Consoles
   { name: "PlayStation", slug: "playstation" },

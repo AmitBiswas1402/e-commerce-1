@@ -14,7 +14,6 @@ import {
   Image as ImageIcon,
   ArrowLeft,
   RefreshCw,
-  Sparkles,
   Store,
   Lock,
   IndianRupee,
