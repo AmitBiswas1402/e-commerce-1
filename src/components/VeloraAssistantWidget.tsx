@@ -155,26 +155,26 @@ export default function VeloraAssistantWidget() {
       {/* Floating Chat Drawer Window */}
       {isOpen && (
         <div
-          className={`w-[90vw] sm:w-[420px] bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-300 ease-in-out mb-3.5 ${
-            isMinimized ? "h-[64px]" : "h-[580px] max-h-[75vh]"
+          className={`w-[88vw] sm:w-[350px] bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-300 ease-in-out mb-3 ${
+            isMinimized ? "h-[56px]" : "h-[440px] max-h-[55vh]"
           }`}
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-violet-700 via-indigo-700 to-purple-800 text-white p-4 flex items-center justify-between shadow-md">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20">
-                <Bot className="w-5 h-5 text-indigo-200" />
+          <div className="bg-gradient-to-r from-violet-700 via-indigo-700 to-purple-800 text-white px-3.5 py-3 flex items-center justify-between shadow-md shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shrink-0">
+                <Bot className="w-4 h-4 text-indigo-200" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-base leading-none">Velora AI Assistant</h3>
-                  <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-wider bg-amber-400/20 text-amber-300 rounded border border-amber-300/30">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-bold text-sm leading-none">Velora AI</h3>
+                  <span className="px-1.5 py-0.2 text-[9px] uppercase font-bold tracking-wider bg-amber-400/20 text-amber-300 rounded border border-amber-300/30">
                     Gemini 2.5
                   </span>
                 </div>
-                <p className="text-xs text-indigo-200 mt-1 flex items-center gap-1.5">
+                <p className="text-[11px] text-indigo-200 mt-0.5 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Online • Smart Recommendations
+                  Online Shopping Assistant
                 </p>
               </div>
             </div>

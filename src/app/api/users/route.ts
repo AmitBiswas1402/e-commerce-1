@@ -5,6 +5,9 @@ import { db } from "@/lib"
 import { users } from "@/db/schema"
 import { ADMIN_EMAIL, errorMessage, getCurrentDbUser, requireRole, type UserRole } from "@/lib/authorization"
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 type RolePayload = { role?: unknown }
 
 async function syncUserInDb(clerkUser: NonNullable<Awaited<ReturnType<typeof currentUser>>>) {
@@ -101,6 +104,21 @@ export async function PATCH(req: Request) {
     }
 
     await db.update(users).set({ role: body.role, updatedAt: new Date() }).where(eq(users.id, dbUser.id))
+
+    // Send Welcome Email via Resend in the background
+    const userEmail = clerkUser.emailAddresses[0]?.emailAddress
+    if (userEmail) {
+      fetch(`${req.headers.get("origin") || "http://localhost:3000"}/api/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "WELCOME",
+          to: userEmail,
+          customerName: clerkUser.firstName || "Friend",
+        }),
+      }).catch((err) => console.error("Welcome email dispatch error:", err))
+    }
+
     return NextResponse.json({ success: true, role: body.role })
   } catch (error) {
     console.error("PATCH /api/users error:", error)

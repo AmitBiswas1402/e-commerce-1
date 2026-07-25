@@ -48,7 +48,7 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
 export default function SearchBar({
   className,
   onSearch,
-  placeholder = "Search for products, brands, and more...",
+  placeholder = 'Ask AI: e.g. "Lightweight shoes for rainy day running"...',
   ...props
 }: SearchBarProps) {
   const router = useRouter()
@@ -63,26 +63,75 @@ export default function SearchBar({
   const [productsList, setProductsList] = useState<Product[]>([])
 
   useEffect(() => {
-    fetch("/api/products")
-      .then((res) => res.json())
+    fetch("/api/products?t=" + Date.now(), { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
-        setProductsList(data)
+        setProductsList(Array.isArray(data) ? data : [])
       })
       .catch((err) => {
         console.error("Failed to load products in SearchBar via REST API:", err)
       })
   }, [])
 
-  // ── Derive suggestions via useMemo (no setState in effect) ────────────────
+  // ── Derive suggestions via useMemo ────────────────
   const suggestions = useMemo<Product[]>(() => {
     const q = query.trim().toLowerCase()
     if (!q) return []
-    return productsList.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q)
-    ).slice(0, 5)
+
+    const STOPWORDS = new Set(["for", "a", "an", "the", "in", "on", "at", "with", "by", "of", "to", "day", "is", "are", "and", "or", "setup", "under", "below"])
+    const rawTokens = q.split(/\s+/).map((t) => t.replace(/[^\w]/g, "")).filter(Boolean)
+    const tokens = rawTokens.filter((t) => t.length > 1 && !STOPWORDS.has(t))
+
+    if (tokens.length === 0) return []
+
+    const isShoeQuery = tokens.some((t) => ["shoes", "shoe", "sneaker", "footwear", "running"].includes(t))
+    const isAudioQuery = tokens.some((t) => ["headphone", "headphones", "earbuds", "earbud", "audio", "headset", "speaker"].includes(t))
+    const isDesktopQuery = tokens.some((t) => ["desktop", "monitor", "display", "keyboard", "mouse", "desk", "chair"].includes(t))
+    const isBookQuery = tokens.some((t) => ["book", "books", "habit", "novel", "read"].includes(t))
+
+    const scored = productsList.map((p) => {
+      const name = p.name.toLowerCase()
+      const category = (p.category || "").toLowerCase()
+      const desc = (p.description || "").toLowerCase()
+      const fullText = `${name} ${category} ${desc}`
+
+      let score = 0
+
+      if (fullText.includes(q)) score += 100
+      if (name.includes(q)) score += 150
+
+      if (isShoeQuery) {
+        if (name.includes("shoe") || name.includes("sneaker") || name.includes("running") || category.includes("shoes") || category.includes("sports")) score += 80
+        else if (category.includes("audio") || name.includes("headphone") || name.includes("earbud")) return { p, score: -100 }
+      }
+
+      if (isAudioQuery) {
+        if (name.includes("headphone") || name.includes("earbud") || name.includes("audio") || name.includes("headset") || category.includes("electronics")) score += 80
+        else if (category.includes("apparel") || name.includes("shoe")) return { p, score: -100 }
+      }
+
+      if (isDesktopQuery) {
+        if (name.includes("monitor") || name.includes("chair") || name.includes("keyboard") || name.includes("mouse") || name.includes("desk") || category.includes("furniture") || category.includes("electronics")) score += 80
+      }
+
+      if (isBookQuery) {
+        if (category.includes("book") || name.includes("book") || name.includes("habit") || name.includes("psychology")) score += 80
+      }
+
+      tokens.forEach((tok) => {
+        if (name.includes(tok)) score += 25
+        else if (category.includes(tok)) score += 15
+        else if (desc.includes(tok)) score += 5
+      })
+
+      return { p, score }
+    })
+
+    return scored
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((item) => item.p)
+      .slice(0, 5)
   }, [query, productsList])
 
   // ── Derive dropdown open state (no separate state needed) ─────────────────
@@ -140,6 +189,8 @@ export default function SearchBar({
   const handleClear = () => {
     setQuery("")
     setActiveIndex(-1)
+    setIsFocused(false)
+    router.push("/")
     inputRef.current?.focus()
   }
 
@@ -216,30 +267,24 @@ export default function SearchBar({
             onFocus={() => setIsFocused(true)}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
-            className="w-full bg-transparent text-sm text-zinc-900 placeholder:text-zinc-400 outline-none border-none focus:ring-0 focus:outline-none dark:text-zinc-100 dark:placeholder:text-zinc-500 pr-6"
+            className="w-full bg-transparent text-sm text-zinc-900 placeholder:text-zinc-400 outline-none border-none focus:ring-0 focus:outline-none dark:text-zinc-100 dark:placeholder:text-zinc-500 pr-2"
             autoComplete="off"
           />
-
-          {/* Clear (✕) button */}
-          {query.length > 0 && (
-            <button
-              type="button"
-              onClick={handleClear}
-              className="absolute right-1 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:bg-zinc-800 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300 transition-colors"
-              aria-label="Clear search"
-            >
-              <X className="size-3" />
-            </button>
-          )}
         </div>
 
-        {/* Search Button (Right) */}
+        {/* Search / Clear Action Button (Right) */}
         <button
-          type="submit"
-          className="relative flex h-9 w-9 items-center justify-center rounded-full bg-linear-to-r from-violet-600 to-indigo-600 text-white shadow-sm transition-all duration-300 hover:scale-105 hover:from-violet-500 hover:to-indigo-500 active:scale-95 mr-1 shrink-0"
-          aria-label="Search"
+          type={query.length > 0 ? "button" : "submit"}
+          onClick={query.length > 0 ? handleClear : undefined}
+          className="relative flex h-9 w-9 items-center justify-center rounded-full bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-sm transition-all duration-300 hover:scale-105 active:scale-95 mr-1 shrink-0 cursor-pointer"
+          aria-label={query.length > 0 ? "Clear search" : "Search"}
+          title={query.length > 0 ? "Clear search" : "Search"}
         >
-          <Search className="size-4 transition-transform duration-300 group-hover/search:scale-110" />
+          {query.length > 0 ? (
+            <X className="size-4 transition-transform duration-300 animate-in fade-in spin-in-90" />
+          ) : (
+            <Search className="size-4 transition-transform duration-300 group-hover/search:scale-110" />
+          )}
         </button>
       </form>
 

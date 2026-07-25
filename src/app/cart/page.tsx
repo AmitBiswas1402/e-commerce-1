@@ -150,7 +150,26 @@ export default function CartPage() {
             }
             sessionStorage.setItem("velora_last_order", JSON.stringify(savedOrder))
 
-            // 5. Clear cart & redirect to success page
+            // 5. Send Professional Order Confirmation Email via Resend
+            fetch("/api/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                type: "ORDER_CONFIRMATION",
+                to: user?.primaryEmailAddress?.emailAddress || "delivered@resend.dev",
+                customerName: user?.fullName || user?.firstName || "Valued Customer",
+                orderId: response.razorpay_order_id || `VEL-${Date.now().toString().slice(-6)}`,
+                items: cart.map((item) => ({
+                  name: item.product.name,
+                  quantity: item.quantity,
+                  price: item.product.price,
+                })),
+                totalAmount: total,
+                shippingAddress: "Saved Shipping Address",
+              }),
+            }).catch((emailErr) => console.error("Order confirmation email dispatch error:", emailErr))
+
+            // 6. Clear cart & redirect to success page
             clearCart()
             window.location.href = `/checkout/success?payment_id=${response.razorpay_payment_id}&order_id=${response.razorpay_order_id}`
           } catch (verifyErr: any) {
