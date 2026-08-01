@@ -155,12 +155,12 @@ export default function VeloraAssistantWidget() {
       {/* Floating Chat Drawer Window */}
       {isOpen && (
         <div
-          className={`w-[88vw] sm:w-[350px] bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-300 ease-in-out mb-3 ${
-            isMinimized ? "h-[56px]" : "h-[440px] max-h-[55vh]"
+          className={`w-[88vw] sm:w-87.5 bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-300 ease-in-out mb-3 ${
+            isMinimized ? "h-14" : "h-110 max-h-[55vh]"
           }`}
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-violet-700 via-indigo-700 to-purple-800 text-white px-3.5 py-3 flex items-center justify-between shadow-md shrink-0">
+          <div className="bg-linear-to-r from-violet-700 via-indigo-700 to-purple-800 text-white px-3.5 py-3 flex items-center justify-between shadow-md shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shrink-0">
                 <Bot className="w-4 h-4 text-indigo-200" />
@@ -252,7 +252,7 @@ export default function VeloraAssistantWidget() {
                                 >
                                   <div className="flex gap-3 items-center">
                                     {/* Thumbnail Image */}
-                                    <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-100">
+                                    <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
                                       <Image
                                         src={product.images && product.images[0] ? product.images[0] : "/placeholder.jpg"}
                                         alt={product.name}
@@ -360,7 +360,7 @@ export default function VeloraAssistantWidget() {
                 {/* Loading State */}
                 {isLoading && (
                   <div className="flex items-center gap-2.5 text-violet-700 font-medium text-xs bg-violet-50/90 border border-violet-200/80 rounded-2xl px-3.5 py-2.5 w-fit shadow-xs animate-pulse">
-                    <div className="w-4 h-4 border-2 border-violet-600 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                    <div className="w-4 h-4 border-2 border-violet-600 border-t-transparent rounded-full animate-spin shrink-0" />
                     <span>Please wait, searching...</span>
                   </div>
                 )}
@@ -397,7 +397,7 @@ export default function VeloraAssistantWidget() {
           setIsOpen(!isOpen)
           setIsMinimized(false)
         }}
-        className={`w-14 h-14 rounded-full bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white shadow-2xl hover:shadow-violet-500/30 flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 border border-white/20 relative group ${!isOpen ? 'animate-float' : ''}`}
+        className={`w-14 h-14 rounded-full bg-linear-to-r from-violet-600 via-purple-600 to-indigo-600 text-white shadow-2xl hover:shadow-violet-500/30 flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 border border-white/20 relative group ${!isOpen ? 'animate-float' : ''}`}
         aria-label={isOpen ? "Close Velora Assistant" : "Open Velora Assistant"}
       >
         {/* Pulsing glow effect */}

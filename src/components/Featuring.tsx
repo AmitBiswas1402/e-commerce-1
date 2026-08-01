@@ -176,7 +176,7 @@ function FeaturingContent() {
                 : "Handpicked for you"}
             </span>
             {query && (
-              <span className="rounded-full bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 px-2.5 py-0.5 text-[10px] font-bold">
+              <span className="rounded-full bg-linear-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 px-2.5 py-0.5 text-[10px] font-bold">
                 {isAiSearching ? "⚡ AI Intent Matching..." : "✨ AI Intent Matched"}
               </span>
             )}
