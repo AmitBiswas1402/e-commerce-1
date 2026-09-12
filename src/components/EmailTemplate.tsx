@@ -20,7 +20,7 @@ export interface EmailTemplateProps {
 export function EmailTemplate({
   type = 'ORDER_CONFIRMATION',
   customerName = 'Valued Customer',
-  orderId = `VEL-${Math.floor(100000 + Math.random() * 900000)}`,
+  orderId = '',
   items = [],
   totalAmount = 0,
   shippingAddress = '123 Market Street, Suite 400',

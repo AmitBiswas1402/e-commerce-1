@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useUser } from "@clerk/nextjs"
 import {
   Package,
@@ -11,18 +12,15 @@ import {
   Search,
   Edit2,
   Trash2,
-  CheckCircle,
   XCircle,
   Image as ImageIcon,
   ArrowLeft,
   RefreshCw,
-  Sparkles,
   ShieldCheck,
   Lock,
-  Users as UsersIcon,
   Store,
-  Calendar,
   Mail,
+  ClipboardList,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -33,7 +31,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -98,6 +95,66 @@ interface BrandItem {
   isActive?: boolean
 }
 
+interface AdminOrderItem {
+  id: string
+  productId: string | null
+  productName: string
+  variantName: string | null
+  sku: string
+  unitPrice: number
+  quantity: number
+  totalPrice: number
+  image: string
+}
+
+interface AdminOrder {
+  id: string
+  orderNumber: string
+  status: string
+  paymentStatus: string
+  subtotal: number
+  shippingAmount: number
+  discountAmount: number
+  totalAmount: number
+  shippingFullName: string
+  shippingCity: string
+  shippingState: string
+  createdAt: string
+  items: AdminOrderItem[]
+  customer?: {
+    id: string
+    email: string
+    firstName: string | null
+    lastName: string | null
+  }
+}
+
+const ORDER_STATUSES = [
+  "PENDING",
+  "CONFIRMED",
+  "PROCESSING",
+  "SHIPPED",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+  "CANCELLED",
+]
+
+const ORDER_STATUS_COLORS: Record<string, string> = {
+  PENDING: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20",
+  CONFIRMED: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/20",
+  PROCESSING: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+  SHIPPED: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/20",
+  OUT_FOR_DELIVERY: "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20",
+  DELIVERED: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+  CANCELLED: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20",
+}
+
+const USER_ROLES = ["CUSTOMER", "VENDOR", "ADMIN"]
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback
+}
+
 export default function MasterAdminDashboardPage() {
   const { isLoaded, isSignedIn, user } = useUser()
   const [userRole, setUserRole] = useState<string | null>(null)
@@ -107,6 +164,10 @@ export default function MasterAdminDashboardPage() {
   const [products, setProducts] = useState<ProductItem[]>([])
   const [categories, setCategories] = useState<CategoryItem[]>([])
   const [brands, setBrands] = useState<BrandItem[]>([])
+  const [adminOrders, setAdminOrders] = useState<AdminOrder[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [roleUpdatingId, setRoleUpdatingId] = useState<string | null>(null)
+  const [roleSaveMsg, setRoleSaveMsg] = useState<{ id: string; message: string; isError: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -174,25 +235,35 @@ export default function MasterAdminDashboardPage() {
   }, [isSignedIn, user])
 
   // Fetch initial master data
+  const fetchMasterData = async () => {
+    const parseJsonSafe = async (res: Response) => {
+      if (!res.ok) return []
+      return res.json().catch(() => [])
+    }
+
+    const [resVendors, resProds, resCats, resBrands] = await Promise.all([
+      fetch("/api/users?role=all").then(parseJsonSafe),
+      fetch("/api/products").then(parseJsonSafe),
+      fetch("/api/categories").then(parseJsonSafe),
+      fetch("/api/brands").then(parseJsonSafe),
+    ])
+
+    return {
+      vendors: Array.isArray(resVendors) ? resVendors : [],
+      products: Array.isArray(resProds) ? resProds : [],
+      categories: Array.isArray(resCats) ? resCats : [],
+      brands: Array.isArray(resBrands) ? resBrands : [],
+    }
+  }
+
   const fetchData = async () => {
     setLoading(true)
     try {
-      const parseJsonSafe = async (res: Response) => {
-        if (!res.ok) return []
-        return res.json().catch(() => [])
-      }
-
-      const [resVendors, resProds, resCats, resBrands] = await Promise.all([
-        fetch("/api/users?role=VENDOR").then(parseJsonSafe),
-        fetch("/api/products").then(parseJsonSafe),
-        fetch("/api/categories").then(parseJsonSafe),
-        fetch("/api/brands").then(parseJsonSafe),
-      ])
-
-      setVendorsList(Array.isArray(resVendors) ? resVendors : [])
-      setProducts(Array.isArray(resProds) ? resProds : [])
-      setCategories(Array.isArray(resCats) ? resCats : [])
-      setBrands(Array.isArray(resBrands) ? resBrands : [])
+      const data = await fetchMasterData()
+      setVendorsList(data.vendors)
+      setProducts(data.products)
+      setCategories(data.categories)
+      setBrands(data.brands)
     } catch (err) {
       console.error("Failed to load master admin dashboard data:", err)
     } finally {
@@ -201,8 +272,92 @@ export default function MasterAdminDashboardPage() {
   }
 
   useEffect(() => {
-    fetchData()
+    let active = true
+    const load = async () => {
+      try {
+        const data = await fetchMasterData()
+        if (!active) return
+        setVendorsList(data.vendors)
+        setProducts(data.products)
+        setCategories(data.categories)
+        setBrands(data.brands)
+        setLoading(false)
+      } catch (err) {
+        console.error("Failed to load master admin dashboard data:", err)
+        if (active) setLoading(false)
+      }
+    }
+    load()
+    return () => {
+      active = false
+    }
   }, [])
+
+  // Fetch all orders (admin sees everything)
+  const fetchAdminOrders = async () => {
+    setOrdersLoading(true)
+    try {
+      const res = await fetch(`/api/orders?t=${Date.now()}`, { cache: "no-store" })
+      if (res.ok) {
+        const data = await res.json()
+        setAdminOrders(Array.isArray(data) ? data : [])
+      }
+    } catch (err) {
+      console.error("Failed to load admin orders:", err)
+    } finally {
+      setOrdersLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === "orders") {
+      fetchAdminOrders()
+    }
+  }, [activeTab])
+
+  // Update an order's status (admin only)
+  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
+    try {
+      const res = await fetch("/api/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId, status }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error || "Failed to update order status")
+      }
+      setAdminOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status } : o))
+      )
+    } catch (err) {
+      setErrorMessage(getErrorMessage(err, "Failed to update order status"))
+    }
+  }
+
+  // Change a user's role (admin only)
+  const handleUpdateUserRole = async (userId: string, role: string) => {
+    setRoleUpdatingId(userId)
+    setRoleSaveMsg(null)
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, role }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to update role")
+      }
+      setVendorsList((prev) => prev.map((v) => (v.id === userId ? { ...v, role } : v)))
+      setRoleSaveMsg({ id: userId, message: "Role updated", isError: false })
+      setTimeout(() => setRoleSaveMsg(null), 2500)
+    } catch (err) {
+      setRoleSaveMsg({ id: userId, message: getErrorMessage(err, "Failed to update role"), isError: true })
+    } finally {
+      setRoleUpdatingId(null)
+    }
+  }
 
   // Helper to get vendor name for a product
   const getVendorName = (vendorId?: string) => {
@@ -307,8 +462,8 @@ export default function MasterAdminDashboardPage() {
 
       setIsProductModalOpen(false)
       fetchData()
-    } catch (err: any) {
-      setErrorMessage(err.message || "An error occurred")
+    } catch (err) {
+      setErrorMessage(getErrorMessage(err, "An error occurred"))
     } finally {
       setIsSubmitting(false)
     }
@@ -330,8 +485,8 @@ export default function MasterAdminDashboardPage() {
       }
       setDeletingTarget(null)
       fetchData()
-    } catch (err: any) {
-      setErrorMessage(err.message || "Delete failed")
+    } catch (err) {
+      setErrorMessage(getErrorMessage(err, "Delete failed"))
     } finally {
       setIsDeleting(false)
     }
@@ -381,8 +536,8 @@ export default function MasterAdminDashboardPage() {
 
       setIsCategoryModalOpen(false)
       fetchData()
-    } catch (err: any) {
-      setErrorMessage(err.message || "Failed to save category")
+    } catch (err) {
+      setErrorMessage(getErrorMessage(err, "Failed to save category"))
     } finally {
       setIsSubmitting(false)
     }
@@ -430,8 +585,8 @@ export default function MasterAdminDashboardPage() {
 
       setIsBrandModalOpen(false)
       fetchData()
-    } catch (err: any) {
-      setErrorMessage(err.message || "Failed to save brand")
+    } catch (err) {
+      setErrorMessage(getErrorMessage(err, "Failed to save brand"))
     } finally {
       setIsSubmitting(false)
     }
@@ -512,7 +667,10 @@ export default function MasterAdminDashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={fetchData}
+              onClick={() => {
+                setLoading(true)
+                fetchData()
+              }}
               disabled={loading}
               className="gap-1.5 text-xs font-bold"
             >
@@ -534,12 +692,29 @@ export default function MasterAdminDashboardPage() {
 
       {/* Main Container */}
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-8 space-y-6">
+        {/* Error Banner */}
+        {errorMessage && (
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 dark:border-rose-900/50 dark:bg-rose-950/40">
+            <p className="text-xs font-medium text-rose-700 dark:text-rose-300">
+              {errorMessage}
+            </p>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              aria-label="Dismiss error"
+              className="text-rose-500 hover:text-rose-700 dark:hover:text-rose-300"
+            >
+              <XCircle className="size-4" />
+            </button>
+          </div>
+        )}
+
         {/* Metric Cards Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/60 shadow-xs">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                Registered Vendors
+                Registered Users
               </CardTitle>
               <Store className="size-4 text-amber-600 dark:text-amber-400" />
             </CardHeader>
@@ -548,7 +723,7 @@ export default function MasterAdminDashboardPage() {
                 {vendorsList.length}
               </div>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
-                Active marketplace sellers
+                All accounts across roles
               </p>
             </CardContent>
           </Card>
@@ -611,7 +786,7 @@ export default function MasterAdminDashboardPage() {
             <TabsList className="bg-zinc-100 dark:bg-zinc-800/80 p-1">
               <TabsTrigger value="vendors" className="text-xs font-bold gap-1.5">
                 <Store className="size-3.5" />
-                <span>Vendors Directory ({filteredVendors.length})</span>
+                <span>Users ({filteredVendors.length})</span>
               </TabsTrigger>
               <TabsTrigger value="products" className="text-xs font-bold gap-1.5">
                 <Package className="size-3.5" />
@@ -624,6 +799,10 @@ export default function MasterAdminDashboardPage() {
               <TabsTrigger value="brands" className="text-xs font-bold gap-1.5">
                 <Award className="size-3.5" />
                 <span>Brands ({filteredBrands.length})</span>
+              </TabsTrigger>
+              <TabsTrigger value="orders" className="text-xs font-bold gap-1.5">
+                <ClipboardList className="size-3.5" />
+                <span>Orders ({adminOrders.length})</span>
               </TabsTrigger>
             </TabsList>
 
@@ -645,10 +824,10 @@ export default function MasterAdminDashboardPage() {
             <Card className="border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/60 overflow-hidden shadow-xs">
               <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
                 <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
-                  Registered Marketplace Vendors
+                  Registered Users & Role Management
                 </h3>
                 <p className="text-[11px] text-zinc-400">
-                  Inspect sellers who have signed up and list products on your website.
+                  Manage every account and assign CUSTOMER, VENDOR, or ADMIN roles.
                 </p>
               </div>
 
@@ -656,24 +835,24 @@ export default function MasterAdminDashboardPage() {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/80 text-zinc-500 dark:text-zinc-400 font-bold">
-                      <th className="py-3 px-4">Vendor Name / Profile</th>
+                      <th className="py-3 px-4">User / Profile</th>
                       <th className="py-3 px-4">Email Address</th>
                       <th className="py-3 px-4">Products Listed</th>
-                      <th className="py-3 px-4">Role Badge</th>
-                      <th className="py-3 px-4 text-right">Vendor ID</th>
+                      <th className="py-3 px-4">Role</th>
+                      <th className="py-3 px-4 text-right">User ID</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                     {loading ? (
                       <tr>
                         <td colSpan={5} className="py-8 text-center text-zinc-400">
-                          Loading registered vendors...
+                          Loading registered users...
                         </td>
                       </tr>
                     ) : filteredVendors.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="py-8 text-center text-zinc-400">
-                          No registered vendors found in system.
+                          No registered users found in system.
                         </td>
                       </tr>
                     ) : (
@@ -687,9 +866,11 @@ export default function MasterAdminDashboardPage() {
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-3">
                                 {vendor.imageUrl ? (
-                                  <img
+                                  <Image
                                     src={vendor.imageUrl}
                                     alt={vendor.email}
+                                    width={32}
+                                    height={32}
                                     className="h-8 w-8 rounded-full object-cover border border-zinc-200"
                                   />
                                 ) : (
@@ -700,7 +881,7 @@ export default function MasterAdminDashboardPage() {
                                 <span className="font-bold text-zinc-900 dark:text-zinc-100">
                                   {vendor.firstName
                                     ? `${vendor.firstName} ${vendor.lastName || ""}`
-                                    : "Vendor Account"}
+                                    : "User Account"}
                                 </span>
                               </div>
                             </td>
@@ -719,9 +900,37 @@ export default function MasterAdminDashboardPage() {
                             </td>
 
                             <td className="py-3 px-4">
-                              <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px]">
-                                Vendor
-                              </Badge>
+                              <div className="flex flex-col items-start gap-1">
+                                <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px]">
+                                  {vendor.role || "No Role"}
+                                </Badge>
+                                <div className="flex items-center gap-1">
+                                  <select
+                                    value={vendor.role || "CUSTOMER"}
+                                    disabled={roleUpdatingId === vendor.id}
+                                    onChange={(e) => handleUpdateUserRole(vendor.id, e.target.value)}
+                                    className="h-7 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-1.5 text-[10px] font-semibold text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-purple-500 disabled:opacity-50"
+                                  >
+                                    {USER_ROLES.map((r) => (
+                                      <option key={r} value={r}>
+                                        {r}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {roleUpdatingId === vendor.id && (
+                                    <RefreshCw className="size-3 animate-spin text-purple-500" />
+                                  )}
+                                </div>
+                                {roleSaveMsg?.id === vendor.id && (
+                                  <span
+                                    className={`text-[10px] font-bold ${
+                                      roleSaveMsg.isError ? "text-rose-500" : "text-emerald-600"
+                                    }`}
+                                  >
+                                    {roleSaveMsg.message}
+                                  </span>
+                                )}
+                              </div>
                             </td>
 
                             <td className="py-3 px-4 text-right font-mono text-[10px] text-zinc-400">
@@ -737,9 +946,7 @@ export default function MasterAdminDashboardPage() {
             </Card>
           </TabsContent>
 
-          {/* ─────────────────────────────────────────────────────────────────── */}
           {/* TAB 2: ALL PRODUCTS */}
-          {/* ─────────────────────────────────────────────────────────────────── */}
           <TabsContent value="products">
             <Card className="border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/60 overflow-hidden shadow-xs">
               <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
@@ -776,9 +983,11 @@ export default function MasterAdminDashboardPage() {
                           <div className="flex items-center gap-3">
                             <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800">
                               {prod.images && prod.images[0] ? (
-                                <img
+                                <Image
                                   src={prod.images[0]}
                                   alt={prod.name}
+                                  width={40}
+                                  height={40}
                                   className="h-full w-full object-cover"
                                 />
                               ) : (
@@ -960,6 +1169,151 @@ export default function MasterAdminDashboardPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </Card>
+          </TabsContent>
+
+          {/* ─────────────────────────────────────────────────────────────────── */}
+          {/* TAB 5: ALL ORDERS */}
+          {/* ─────────────────────────────────────────────────────────────────── */}
+          <TabsContent value="orders">
+            <Card className="border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/60 overflow-hidden shadow-xs">
+              <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                    All Orders ({adminOrders.length})
+                  </h3>
+                  <p className="text-[11px] text-zinc-400">
+                    Full oversight of every order with payment and shipping status.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchAdminOrders}
+                  disabled={ordersLoading}
+                  className="gap-1.5 text-xs font-bold"
+                >
+                  <RefreshCw className={`size-3.5 ${ordersLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {ordersLoading ? (
+                  <p className="py-8 text-center text-xs text-zinc-400">Loading all orders...</p>
+                ) : adminOrders.length === 0 ? (
+                  <p className="py-8 text-center text-xs text-zinc-400">
+                    No orders have been placed yet.
+                  </p>
+                ) : (
+                  adminOrders.map((order) => (
+                    <div
+                      key={order.id}
+                      className="rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 p-4 space-y-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <div className="flex size-8 items-center justify-center rounded-lg bg-purple-600/10 text-purple-600 dark:text-purple-400">
+                            <ClipboardList className="size-4" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                              #{order.orderNumber}
+                            </p>
+                            <p className="text-[10px] text-zinc-400">
+                              {new Date(order.createdAt).toLocaleString("en-IN", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
+                              ORDER_STATUS_COLORS[order.status] || ORDER_STATUS_COLORS.PENDING
+                            }`}
+                          >
+                            {order.status}
+                          </span>
+                          <span className="rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
+                            {order.paymentStatus}
+                          </span>
+                          <span className="text-xs font-black text-zinc-900 dark:text-zinc-100">
+                            ₹{order.totalAmount.toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        <div className="space-y-0.5">
+                          <p>
+                            Customer:{" "}
+                            <strong className="text-zinc-800 dark:text-zinc-200">
+                              {order.customer
+                                ? `${order.customer.firstName || ""} ${order.customer.lastName || ""}`.trim() ||
+                                  order.customer.email
+                                : order.shippingFullName}
+                            </strong>
+                          </p>
+                          <p className="flex items-center gap-1">
+                            <Mail className="size-3" />
+                            {order.customer?.email || "N/A"}
+                          </p>
+                          <p>
+                            Ship to {order.shippingFullName} · {order.shippingCity},{" "}
+                            {order.shippingState}
+                          </p>
+                        </div>
+                        <p>{order.items.length} item{order.items.length !== 1 ? "s" : ""}</p>
+                      </div>
+
+                      <div className="divide-y divide-zinc-100 dark:divide-zinc-800 border-t border-zinc-100 dark:border-zinc-800 pt-2">
+                        {order.items.map((item) => (
+                          <div key={item.id} className="py-2 flex items-center gap-3">
+                            <img
+                              src={item.image}
+                              alt={item.productName}
+                              className="size-9 rounded-lg object-cover border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-zinc-800 dark:text-zinc-200 truncate">
+                                {item.productName}
+                                {item.variantName ? ` (${item.variantName})` : ""}
+                              </p>
+                              <p className="text-[10px] text-zinc-400 font-mono">{item.sku}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                              {item.quantity} × ₹{item.unitPrice.toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                        <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                          Update Status
+                        </label>
+                        <select
+                          value={order.status}
+                          onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value)}
+                          className="h-8 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        >
+                          {ORDER_STATUSES.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </Card>
           </TabsContent>

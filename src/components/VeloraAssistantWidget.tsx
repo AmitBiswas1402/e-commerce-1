@@ -38,6 +38,9 @@ export default function VeloraAssistantWidget() {
 
   const { addToCart } = useCart()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const idRef = useRef(0)
+
+  const nextMsgId = () => `msg-${++idRef.current}`
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -69,7 +72,7 @@ export default function VeloraAssistantWidget() {
     if (!query || isLoading) return
 
     const userMsg: ChatMessage = {
-      id: Date.now().toString(),
+      id: nextMsgId(),
       role: "user",
       content: query,
       timestamp: new Date()
@@ -98,7 +101,7 @@ export default function VeloraAssistantWidget() {
       }))
 
       const assistantMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: nextMsgId(),
         role: "assistant",
         content: data.message || "Here are some recommendations from our catalog:",
         products: data.products || [],
@@ -112,7 +115,7 @@ export default function VeloraAssistantWidget() {
       setMessages(prev => [
         ...prev,
         {
-          id: (Date.now() + 1).toString(),
+          id: nextMsgId(),
           role: "assistant",
           content: "Sorry, I had trouble processing that request. Please try again!",
           quickReplies: ["Try again", "Shipping & Return policy"],
@@ -169,7 +172,7 @@ export default function VeloraAssistantWidget() {
                 <div className="flex items-center gap-1.5">
                   <h3 className="font-bold text-sm leading-none">Velora AI</h3>
                   <span className="px-1.5 py-0.2 text-[9px] uppercase font-bold tracking-wider bg-amber-400/20 text-amber-300 rounded border border-amber-300/30">
-                    Gemini 2.5
+                    Gemini 3.6 Flash
                   </span>
                 </div>
                 <p className="text-[11px] text-indigo-200 mt-0.5 flex items-center gap-1">

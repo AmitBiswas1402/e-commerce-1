@@ -98,7 +98,7 @@ Customer Reviews:
 ${reviewsText}
 `
 
-        const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        const modelsToTry = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash"]
         let textResult = ""
 
         for (const modelName of modelsToTry) {
@@ -127,8 +127,19 @@ ${reviewsText}
             .replace(/```/g, "")
             .trim()
 
-          const parsed = JSON.parse(cleanJson)
-          if (parsed.pros && Array.isArray(parsed.pros)) {
+          let parsed: any = null
+          try {
+            parsed = JSON.parse(cleanJson)
+          } catch {
+            const jsonMatch = cleanJson.match(/\{[\s\S]*\}/)
+            if (jsonMatch) {
+              try {
+                parsed = JSON.parse(jsonMatch[0])
+              } catch {}
+            }
+          }
+
+          if (parsed && parsed.pros && Array.isArray(parsed.pros)) {
             return NextResponse.json({
               pros: parsed.pros,
               cons: parsed.cons || ["Slightly higher price point"],

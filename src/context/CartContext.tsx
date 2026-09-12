@@ -1,6 +1,7 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react'
+import { useUser } from '@clerk/nextjs'
 import { Product } from '@/lib/products'
 
 export interface CartItem {
@@ -21,8 +22,15 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined)
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useUser()
   const [cart, setCart] = useState<CartItem[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
+  const [dbReady, setDbReady] = useState(false)
+  const cartRef = useRef<CartItem[]>([])
+
+  useEffect(() => {
+    cartRef.current = cart
+  }, [cart])
 
   // Load cart from localStorage on mount
   useEffect(() => {
@@ -47,6 +55,67 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }, [cart, isLoaded])
+
+  // Pull the signed-in user's persisted cart (or push the local one)
+  useEffect(() => {
+    if (!isLoaded) return
+    if (!user) {
+      setDbReady(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/cart')
+        if (!res.ok) throw new Error('Failed to fetch server cart')
+        const data = await res.json()
+        if (cancelled) return
+        if (Array.isArray(data) && data.length > 0) {
+          setCart(data)
+        } else if (cartRef.current.length > 0) {
+          await fetch('/api/cart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: cartRef.current.map((i) => ({
+                productId: i.product.id,
+                quantity: i.quantity,
+              })),
+            }),
+          })
+        }
+      } catch (e) {
+        console.error("Failed to sync cart with server", e)
+      } finally {
+        if (!cancelled) setDbReady(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isLoaded, user])
+
+  // Persist cart changes to the server (debounced)
+  useEffect(() => {
+    if (!isLoaded || !dbReady || !user) return
+    const id = setTimeout(async () => {
+      try {
+        await fetch('/api/cart', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: cart.map((i) => ({
+              productId: i.product.id,
+              quantity: i.quantity,
+            })),
+          }),
+        })
+      } catch (e) {
+        console.error("Failed to persist cart to server", e)
+      }
+    }, 600)
+    return () => clearTimeout(id)
+  }, [cart, isLoaded, dbReady, user])
 
   const addToCart = (product: Product, quantity = 1) => {
     setCart((prevCart) => {

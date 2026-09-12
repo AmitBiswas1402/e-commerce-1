@@ -161,7 +161,7 @@ export default function ChooseRolePage() {
                     </span>
                     {isSelected && (
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white">
-                        <Check className="size-3.5 stroke-[3]" />
+                        <Check className="size-3.5 stroke-3" />
                       </span>
                     )}
                   </div>

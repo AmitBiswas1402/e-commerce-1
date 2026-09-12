@@ -185,7 +185,7 @@ Respond strictly in JSON schema:
 }
 `
 
-        const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        const modelsToTry = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash"]
         let textResult = ""
 
         for (const modelName of modelsToTry) {
@@ -210,9 +210,19 @@ Respond strictly in JSON schema:
 
         if (textResult) {
           const cleanJson = textResult.replace(/```json/gi, "").replace(/```/g, "").trim()
-          const parsed = JSON.parse(cleanJson)
+          let parsed: any = null
+          try {
+            parsed = JSON.parse(cleanJson)
+          } catch {
+            const jsonMatch = cleanJson.match(/\{[\s\S]*\}/)
+            if (jsonMatch) {
+              try {
+                parsed = JSON.parse(jsonMatch[0])
+              } catch {}
+            }
+          }
 
-          if (parsed.matchedProductIds && Array.isArray(parsed.matchedProductIds) && parsed.matchedProductIds.length > 0) {
+          if (parsed && parsed.matchedProductIds && Array.isArray(parsed.matchedProductIds) && parsed.matchedProductIds.length > 0) {
             return NextResponse.json({
               matchedProductIds: parsed.matchedProductIds.map(String),
               intentSummary: parsed.intentSummary || `AI Matched items for "${cleanQuery}"`

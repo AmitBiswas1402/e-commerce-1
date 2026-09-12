@@ -216,7 +216,7 @@ export async function POST(req: Request) {
     const budgetMatch = lowerQuery.match(/(?:under|below|less than|within|upto)\s*(?:₹|rs\.?|inr)?\s*(\d+(?:,\d+)*(?:\s*k)?)/i) ||
       lowerQuery.match(/(\d+)\s*k/i)
     if (budgetMatch) {
-      let rawVal = budgetMatch[1].replace(/,/g, '')
+      const rawVal = budgetMatch[1].replace(/,/g, '')
       if (budgetMatch[0].toLowerCase().includes('k') || lowerQuery.includes('6k') || lowerQuery.includes('30k')) {
         if (lowerQuery.includes('6k')) maxBudget = 6000
         else if (lowerQuery.includes('30k')) maxBudget = 30000
@@ -294,7 +294,7 @@ ${catalog.map(p => `- ID: "${p.id}" | Name: "${p.name}" | Category: "${p.categor
 
         const fullPrompt = `${systemInstruction}\n\nCONVERSATION HISTORY:\n${formattedHistory}\n\nRespond with valid JSON only:`
 
-        const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        const modelsToTry = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash"]
         let textResult = ""
 
         for (const modelName of modelsToTry) {
@@ -323,32 +323,44 @@ ${catalog.map(p => `- ID: "${p.id}" | Name: "${p.name}" | Category: "${p.categor
             .replace(/```/g, "")
             .trim()
 
-          const parsed = JSON.parse(cleanJson)
-
-          let matchedProducts = catalog.filter(p =>
-            parsed.productIds?.some((id: any) =>
-              String(id).toLowerCase().trim() === String(p.id).toLowerCase().trim() ||
-              p.name.toLowerCase().includes(String(id).toLowerCase().trim()) ||
-              (p.slug && p.slug.toLowerCase() === String(id).toLowerCase().trim())
-            )
-          )
-
-          const isPolicyOnlyQuery = lowerQuery.includes("shipping") || lowerQuery.includes("return") || lowerQuery.includes("refund") || lowerQuery.includes("warranty")
-
-          // GUARANTEE: If not a policy-only query, ALWAYS attach matching product cards!
-          if (matchedProducts.length === 0 && !isPolicyOnlyQuery) {
-            matchedProducts = findMatchingCatalogProducts()
+          let parsed: any = null
+          try {
+            parsed = JSON.parse(cleanJson)
+          } catch {
+            const jsonMatch = cleanJson.match(/\{[\s\S]*\}/)
+            if (jsonMatch) {
+              try {
+                parsed = JSON.parse(jsonMatch[0])
+              } catch {}
+            }
           }
 
-          const predictedReplies = (parsed.quickReplies || predictNextQuickReplies(lastUserMessage))
-            .filter((reply: string) => reply.toLowerCase().trim() !== lowerQuery.trim())
-            .slice(0, 3)
+          if (parsed && (parsed.message || parsed.productIds)) {
+            let matchedProducts = catalog.filter(p =>
+              parsed.productIds?.some((id: any) =>
+                String(id).toLowerCase().trim() === String(p.id).toLowerCase().trim() ||
+                p.name.toLowerCase().includes(String(id).toLowerCase().trim()) ||
+                (p.slug && p.slug.toLowerCase() === String(id).toLowerCase().trim())
+              )
+            )
 
-          return NextResponse.json({
-            message: parsed.message || "Here are top recommendations from our store catalog:",
-            products: matchedProducts,
-            quickReplies: predictedReplies.length >= 2 ? predictedReplies : predictNextQuickReplies(lastUserMessage)
-          })
+            const isPolicyOnlyQuery = lowerQuery.includes("shipping") || lowerQuery.includes("return") || lowerQuery.includes("refund") || lowerQuery.includes("warranty")
+
+            // GUARANTEE: If not a policy-only query, ALWAYS attach matching product cards!
+            if (matchedProducts.length === 0 && !isPolicyOnlyQuery) {
+              matchedProducts = findMatchingCatalogProducts()
+            }
+
+            const predictedReplies = (parsed.quickReplies || predictNextQuickReplies(lastUserMessage))
+              .filter((reply: string) => reply.toLowerCase().trim() !== lowerQuery.trim())
+              .slice(0, 3)
+
+            return NextResponse.json({
+              message: parsed.message || "Here are top recommendations from our store catalog:",
+              products: matchedProducts,
+              quickReplies: predictedReplies.length >= 2 ? predictedReplies : predictNextQuickReplies(lastUserMessage)
+            })
+          }
         }
       } catch (geminiErr) {
         console.error("Gemini API error, falling back to smart catalog search:", geminiErr)

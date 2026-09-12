@@ -173,15 +173,15 @@ RESPONSIBILITIES & INSTRUCTIONS:
       }))
     }
 
-    // 5. Select Model: Prefer OpenAI or Gemini 2.0
+    // 5. Select Model: Prefer OpenAI or Gemini 3.6 Flash
     let modelInstance: any = null
 
     if (process.env.OPENAI_API_KEY) {
       modelInstance = openai("gpt-4o-mini")
     } else if (process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-      modelInstance = google("gemini-2.0-flash")
+      modelInstance = google("gemini-3.6-flash")
     } else {
-      modelInstance = google("gemini-1.5-pro")
+      modelInstance = google("gemini-3.6-flash")
     }
 
     const result = streamText({

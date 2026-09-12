@@ -45,8 +45,8 @@ export default function RoleModal({
 
       onRoleUpdated(selectedRole)
       onClose()
-    } catch (err: any) {
-      console.error("Failed to set onboarding role:", err)
+    } catch (error) {
+      console.error("Failed to set onboarding role:", error)
       onRoleUpdated(selectedRole)
       onClose()
     } finally {
@@ -118,7 +118,7 @@ export default function RoleModal({
                     </span>
                     {isSelected && (
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white">
-                        <Check className="size-3 stroke-[3]" />
+                        <Check className="size-3 stroke-3" />
                       </span>
                     )}
                   </div>

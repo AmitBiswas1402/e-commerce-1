@@ -1,6 +1,6 @@
 import { db } from "@/lib"
-import { products, categories, brands, productImages, productVariants } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { products, categories, brands, productImages, productVariants, reviews } from "@/db/schema"
+import { eq, avg, count } from "drizzle-orm"
 import { type Product } from "./products"
 import { slugify } from "./slug"
 
@@ -56,6 +56,21 @@ export async function getProductBySlug(slug: string): Promise<Product | undefine
     const originalPrice = dbVariants[0]?.compareAtPrice || price
     const inStock = dbVariants.some((v) => v.stock > 0 && v.isActive)
 
+    // Real review averages from the reviews table
+    let rating = 0
+    let reviewCount = 0
+    try {
+      const agg = await db
+        .select({ average: avg(reviews.rating), total: count() })
+        .from(reviews)
+        .where(eq(reviews.productId, item.id))
+        .limit(1)
+      rating = Number(agg[0]?.average || 0)
+      reviewCount = Number(agg[0]?.total || 0)
+    } catch (reviewErr) {
+      console.warn("Failed to load reviews for product:", reviewErr)
+    }
+
     return {
       id: item.id as any,
       name: item.name,
@@ -63,8 +78,8 @@ export async function getProductBySlug(slug: string): Promise<Product | undefine
       category: item.categoryName || "",
       price: price,
       originalPrice: originalPrice,
-      rating: 4.5,
-      reviewCount: 12,
+      rating: rating > 0 ? Number(rating.toFixed(1)) : 0,
+      reviewCount: reviewCount,
       images: dbImages.length > 0 ? dbImages.map((img) => img.imageUrl) : ["/placeholder.jpg"],
       reviews: [],
       inStock: inStock,

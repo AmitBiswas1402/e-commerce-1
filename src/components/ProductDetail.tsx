@@ -27,7 +27,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Product } from "@/lib/products";
+import type { Product, ProductReview } from "@/lib/products";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 
@@ -85,9 +85,10 @@ export default function ProductDetail({ product }: { product: Product }) {
   const wishlisted = isInWishlist(product.id);
 
   // Dynamic Reviews & Rating States
-  const [reviewsList, setReviewsList] = useState(product.reviews || []);
-  const [ratingAvg, setRatingAvg] = useState(product.rating || 4.5);
-  const [reviewCount, setReviewCount] = useState(product.reviewCount || product.reviews?.length || 1);
+  const [reviewsList, setReviewsList] = useState<ProductReview[]>(product.reviews || []);
+  const [ratingAvg, setRatingAvg] = useState(product.rating || 0);
+  const [reviewCount, setReviewCount] = useState(product.reviewCount || product.reviews?.length || 0);
+  const [hasReviewed, setHasReviewed] = useState(false);
 
   // AI Review Summarizer States
   const [aiHighlights, setAiHighlights] = useState<{
@@ -135,45 +136,82 @@ export default function ProductDetail({ product }: { product: Product }) {
     }
   };
 
+  // Fetch reviews from the database for this product
+  const fetchReviews = async () => {
+    try {
+      const res = await fetch(`/api/reviews?productId=${product.id}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.reviews)) {
+          setReviewsList(data.reviews);
+          setRatingAvg(Number(data.averageRating) || 0);
+          setReviewCount(Number(data.reviewCount) || 0);
+          setHasReviewed(Boolean(data.mine));
+          fetchAiReviewSummary(data.reviews);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch reviews:", err);
+    }
+  };
+
   useEffect(() => {
-    fetchAiReviewSummary(product.reviews);
+    fetchReviews();
   }, [product.id]);
 
-  // Handle New Review Submission
+  // Handle New Review Submission (persists to the database)
   const handlePostReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
 
+    if (!user) {
+      alert("Please sign in to review this product.");
+      return;
+    }
+
     setIsSubmittingReview(true);
-    const authorName = newAuthor.trim() || user?.fullName || "Verified Buyer";
-    const dateStr = new Date().toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
-    const userAvatar = user?.imageUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150";
+    try {
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: product.id,
+          rating: newRating,
+          title: newAuthor.trim(),
+          content: newComment.trim(),
+        }),
+      });
 
-    const newReview = {
-      author: authorName,
-      rating: newRating,
-      comment: newComment.trim(),
-      date: dateStr,
-      verified: true,
-      avatar: userAvatar,
-    };
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to submit review");
+      }
 
-    const updatedList = [newReview, ...reviewsList];
-    setReviewsList(updatedList);
+      setNewComment("");
+      setNewRating(5);
+      setIsWriteReviewOpen(false);
+      setHasReviewed(true);
+      await fetchReviews();
+    } catch (err: any) {
+      alert(err.message || "Failed to submit review. Please try again.");
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
 
-    // Recalculate Average & Count
-    const totalRatingSum = updatedList.reduce((acc, r) => acc + r.rating, 0);
-    const newAvg = Number((totalRatingSum / updatedList.length).toFixed(1));
-    setRatingAvg(newAvg);
-    setReviewCount(updatedList.length);
-
-    setNewComment("");
-    setNewRating(5);
-    setIsWriteReviewOpen(false);
-    setIsSubmittingReview(false);
-
-    // Re-trigger AI Review Summarizer for real-time synthesis
-    fetchAiReviewSummary(updatedList);
+  // Delete the current user's review for this product
+  const handleDeleteReview = async () => {
+    try {
+      const res = await fetch(`/api/reviews?productId=${product.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to delete review");
+      }
+      setHasReviewed(false);
+      await fetchReviews();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete review. Please try again.");
+    }
   };
 
   const discount = Math.round(
@@ -537,7 +575,13 @@ export default function ProductDetail({ product }: { product: Product }) {
                   <MessageSquarePlus className="size-4 text-indigo-500" />
                   Write a Customer Review
                 </h3>
-                <span className="text-[11px] text-zinc-400">Verified Reviewer</span>
+                {hasReviewed ? (
+                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                    Review submitted ✓
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-zinc-400">Verified Reviewer</span>
+                )}
               </div>
 
               {/* Star Rating Selector */}
@@ -604,6 +648,15 @@ export default function ProductDetail({ product }: { product: Product }) {
                 >
                   Cancel
                 </button>
+                {hasReviewed && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteReview}
+                    className="rounded-xl border border-rose-200 dark:border-rose-900/60 px-4 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                  >
+                    Remove my review
+                  </button>
+                )}
                 <button
                   type="submit"
                   disabled={isSubmittingReview}

@@ -7,7 +7,7 @@ import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs"
 import { Button } from "./ui/button"
 import Cart from "./Cart"
 import WishList from "./WishList"
-import { Store, ShieldCheck } from "lucide-react"
+import { Store, ShieldCheck, Package } from "lucide-react"
 
 export default function Users() {
   const { isLoaded, isSignedIn, user } = useUser()
@@ -79,6 +79,17 @@ export default function Users() {
 
       {/* WishList Icon Component */}
       <WishList />
+
+      {/* My Orders Link for signed-in users */}
+      {isSignedIn && (
+        <Link
+          href="/orders"
+          className="flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 dark:hover:border-indigo-800 transition-all shadow-xs shrink-0"
+        >
+          <Package className="size-3.5" />
+          <span className="hidden sm:inline">Orders</span>
+        </Link>
+      )}
 
       {/* Cart Icon Component */}
       <Cart />

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib"
-import { products, categories, brands, productImages, productVariants } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { products, categories, brands, productImages, productVariants, reviews } from "@/db/schema"
+import { eq, sql } from "drizzle-orm"
 import { v5 as uuidv5 } from "uuid"
-import { errorMessage, getCurrentDbUser, requireRole } from "@/lib/authorization"
+import { errorMessage, requireRole } from "@/lib/authorization"
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -58,9 +58,13 @@ function resolveCategoryName(dbCategoryName: string | null, productName: string,
 }
 
 // GET /api/products - Fetch products list from Neon DB (with relational joins)
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const rows = await db
+    const { searchParams } = new URL(req.url)
+    const vendorId = searchParams.get("vendor")
+    const categorySlug = searchParams.get("category")
+
+    let query = db
       .select({
         id: products.id,
         name: products.name,
@@ -79,13 +83,46 @@ export async function GET() {
       .leftJoin(categories, eq(products.categoryId, categories.id))
       .leftJoin(brands, eq(products.brandId, brands.id))
 
+    if (vendorId) {
+      query = query.where(eq(products.vendorId, vendorId)) as typeof query
+    }
+
+    if (categorySlug) {
+      const [cat] = await db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(eq(categories.slug, categorySlug))
+        .limit(1)
+      if (cat) {
+        query = query.where(eq(products.categoryId, cat.id)) as typeof query
+      }
+    }
+
+    const rows = await query
+
     const visibleRows = rows
 
     // Bulk-fetch images and variants in parallel (eliminating N+1 database roundtrips)
-    const [allImages, allVariants] = await Promise.all([
+    const [allImages, allVariants, reviewAgg] = await Promise.all([
       db.select().from(productImages).orderBy(productImages.sortOrder),
       db.select().from(productVariants),
+      db
+        .select({
+          productId: reviews.productId,
+          average: sql<number>`avg(${reviews.rating})`,
+          total: sql<number>`count(*)`,
+        })
+        .from(reviews)
+        .groupBy(reviews.productId),
     ])
+
+    const reviewsMap = new Map<string, { average: number; total: number }>()
+    for (const r of reviewAgg) {
+      reviewsMap.set(r.productId, {
+        average: Number(r.average || 0),
+        total: Number(r.total || 0),
+      })
+    }
 
     // Group images by productId
     const imagesMap = new Map<string, string[]>()
@@ -116,6 +153,10 @@ export async function GET() {
 
       const category = resolveCategoryName(row.categoryName, row.name, row.description || "")
 
+      const reviewData = reviewsMap.get(row.id)
+      const rating = reviewData && reviewData.average > 0 ? Number(reviewData.average.toFixed(1)) : 0
+      const reviewCount = reviewData?.total || 0
+
       return {
         id: row.id,
         name: row.name,
@@ -132,8 +173,8 @@ export async function GET() {
         status: row.status,
         isFeatured: row.isFeatured,
         isNewArrival: row.isNewArrival,
-        rating: 4.5,
-        reviewCount: 12,
+        rating: rating,
+        reviewCount: reviewCount,
         images: dbImages.length > 0 ? dbImages : ["/placeholder.jpg"],
         reviews: [],
         inStock: inStock,

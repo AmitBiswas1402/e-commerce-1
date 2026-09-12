@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useUser } from "@clerk/nextjs"
-import { Trash2, Plus, Minus, ArrowRight, ShoppingBag, Percent, ShieldCheck, Loader2, CreditCard } from "lucide-react"
+import { Trash2, Plus, Minus, ArrowRight, ShoppingBag, Percent, ShieldCheck, Loader2, CreditCard, MapPin } from "lucide-react"
 import { useCart } from "@/context/CartContext"
 import { Button } from "@/components/ui/button"
 import { slugify } from "@/lib/slug"
@@ -25,6 +25,24 @@ export default function CartPage() {
   const [couponSuccess, setCouponSuccess] = useState("")
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [paymentError, setPaymentError] = useState("")
+  const [addressError, setAddressError] = useState("")
+  const [shippingAddress, setShippingAddress] = useState({
+    fullName: "",
+    phone: "",
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    state: "",
+    postalCode: "",
+    country: "India",
+  })
+
+  // Pre-fill shipping name from the Clerk profile
+  useEffect(() => {
+    if (user?.fullName && !shippingAddress.fullName) {
+      setShippingAddress((prev) => ({ ...prev, fullName: user.fullName || "" }))
+    }
+  }, [user, shippingAddress.fullName])
 
   // Prevent hydration mismatch & load Razorpay Checkout Script
   useEffect(() => {
@@ -74,6 +92,26 @@ export default function CartPage() {
 
   const handleProceedToRazorpayCheckout = async () => {
     if (cart.length === 0) return
+
+    // Validate shipping address before opening Razorpay
+    const requiredAddressFields = [
+      { key: "fullName", label: "Full name" },
+      { key: "phone", label: "Phone number" },
+      { key: "addressLine1", label: "Address line 1" },
+      { key: "city", label: "City" },
+      { key: "state", label: "State" },
+      { key: "postalCode", label: "Postal code" },
+    ] as const
+
+    for (const field of requiredAddressFields) {
+      if (!shippingAddress[field.key].trim()) {
+        setAddressError(`Please enter your ${field.label} to continue checkout.`)
+        document.getElementById("shipping-address-form")?.scrollIntoView({ behavior: "smooth", block: "center" })
+        return
+      }
+    }
+    setAddressError("")
+
     setIsProcessingPayment(true)
     setPaymentError("")
 
@@ -122,11 +160,42 @@ export default function CartPage() {
               throw new Error(verifyData.error || "Payment signature verification failed")
             }
 
-            // 4. Store receipt data in sessionStorage for receipt view
+            // 4. Persist the paid order server-side (order, items, payment, stock,
+            //    shipping address) - prices are recomputed from the DB, never client-set
+            const orderRes = await fetch("/api/orders", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+                items: cart.map((item) => ({
+                  productId: item.product.id,
+                  quantity: item.quantity,
+                })),
+                shippingAddress: {
+                  fullName: shippingAddress.fullName.trim(),
+                  phone: shippingAddress.phone.trim(),
+                  addressLine1: shippingAddress.addressLine1.trim(),
+                  addressLine2: shippingAddress.addressLine2.trim() || undefined,
+                  city: shippingAddress.city.trim(),
+                  state: shippingAddress.state.trim(),
+                  postalCode: shippingAddress.postalCode.trim(),
+                  country: shippingAddress.country.trim() || "India",
+                },
+              }),
+            })
+
+            const orderData = await orderRes.json()
+            if (!orderRes.ok || !orderData.success) {
+              throw new Error(orderData.error || "Payment succeeded but your order could not be saved. Please contact support.")
+            }
+
+            // 5. Store receipt data in sessionStorage for the receipt view
             const savedOrder = {
               paymentId: response.razorpay_payment_id,
-              orderId: response.razorpay_order_id,
-              amount: total,
+              orderId: orderData.order?.orderNumber || response.razorpay_order_id,
+              amount: orderData.order?.totalAmount ?? total,
               subtotal: cartSubtotal,
               discount: discountAmount,
               shipping: shipping,
@@ -150,28 +219,9 @@ export default function CartPage() {
             }
             sessionStorage.setItem("velora_last_order", JSON.stringify(savedOrder))
 
-            // 5. Send Professional Order Confirmation Email via Resend
-            fetch("/api/send", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                type: "ORDER_CONFIRMATION",
-                to: user?.primaryEmailAddress?.emailAddress || "delivered@resend.dev",
-                customerName: user?.fullName || user?.firstName || "Valued Customer",
-                orderId: response.razorpay_order_id || `VEL-${Date.now().toString().slice(-6)}`,
-                items: cart.map((item) => ({
-                  name: item.product.name,
-                  quantity: item.quantity,
-                  price: item.product.price,
-                })),
-                totalAmount: total,
-                shippingAddress: "Saved Shipping Address",
-              }),
-            }).catch((emailErr) => console.error("Order confirmation email dispatch error:", emailErr))
-
-            // 6. Clear cart & redirect to success page
+            // 6. Only now clear the cart & redirect to the success page
             clearCart()
-            window.location.href = `/checkout/success?payment_id=${response.razorpay_payment_id}&order_id=${response.razorpay_order_id}`
+            window.location.href = `/checkout/success?payment_id=${response.razorpay_payment_id}&order_id=${encodeURIComponent(orderData.order?.orderNumber || "")}`
           } catch (verifyErr: any) {
             console.error("Verification error:", verifyErr)
             setPaymentError(verifyErr.message || "Payment verification failed")
@@ -335,7 +385,128 @@ export default function CartPage() {
 
           {/* ── RIGHT: Summary Card (4 Cols) ─────────────────────────────── */}
           <div className="lg:col-span-4 space-y-6">
-            
+
+            {/* Shipping Address Form */}
+            <div
+              id="shipping-address-form"
+              className="rounded-2xl border border-zinc-200/60 dark:border-zinc-800/60 bg-white dark:bg-zinc-900 p-5 shadow-sm"
+            >
+              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 mb-3 flex items-center gap-1.5">
+                <MapPin className="size-4 text-indigo-500" /> Shipping Address
+              </h3>
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Rahul Sharma"
+                      value={shippingAddress.fullName}
+                      onChange={(e) => setShippingAddress({ ...shippingAddress, fullName: e.target.value })}
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                      Phone Number *
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="e.g. 98765 43210"
+                      value={shippingAddress.phone}
+                      onChange={(e) => setShippingAddress({ ...shippingAddress, phone: e.target.value })}
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                    Address Line 1 *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="House no, building, street"
+                    value={shippingAddress.addressLine1}
+                    onChange={(e) => setShippingAddress({ ...shippingAddress, addressLine1: e.target.value })}
+                    className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                    Address Line 2 (optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Apartment, area, landmark"
+                    value={shippingAddress.addressLine2}
+                    onChange={(e) => setShippingAddress({ ...shippingAddress, addressLine2: e.target.value })}
+                    className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                      City *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Bengaluru"
+                      value={shippingAddress.city}
+                      onChange={(e) => setShippingAddress({ ...shippingAddress, city: e.target.value })}
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                      State *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Karnataka"
+                      value={shippingAddress.state}
+                      onChange={(e) => setShippingAddress({ ...shippingAddress, state: e.target.value })}
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                      Postal Code *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 560001"
+                      value={shippingAddress.postalCode}
+                      onChange={(e) => setShippingAddress({ ...shippingAddress, postalCode: e.target.value })}
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                      Country *
+                    </label>
+                    <input
+                      type="text"
+                      value={shippingAddress.country}
+                      onChange={(e) => setShippingAddress({ ...shippingAddress, country: e.target.value })}
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                {addressError && (
+                  <p className="text-[11px] text-red-500 font-semibold">{addressError}</p>
+                )}
+              </div>
+            </div>
+
             {/* Promo code */}
             <div className="rounded-2xl border border-zinc-200/60 dark:border-zinc-800/60 bg-white dark:bg-zinc-900 p-5 shadow-sm">
               <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 mb-3 flex items-center gap-1.5">

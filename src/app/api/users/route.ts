@@ -34,7 +34,9 @@ async function syncUserInDb(clerkUser: NonNullable<Awaited<ReturnType<typeof cur
   if (!existing) {
     await db.insert(users).values({ ...profile, role: isAdmin ? "ADMIN" : null })
   } else {
-    const newRole = isAdmin ? "ADMIN" : existing.role
+    // Preserve the DB-managed role. ADMIN_EMAIL only bootstraps an ADMIN when
+    // the user has no role yet, so admin roles can be managed in the DB.
+    const newRole = isAdmin && !existing.role ? "ADMIN" : existing.role
     await db
       .update(users)
       .set({ ...profile, role: newRole })
@@ -61,6 +63,13 @@ export async function GET(req: Request) {
     if (!role) return NextResponse.json(current)
     const access = await requireRole("ADMIN")
     if (access.status) return NextResponse.json({ error: "Admin access required" }, { status: access.status })
+
+    // Admin can list every user to manage roles
+    if (role === "all") {
+      const list = await db.select().from(users).orderBy(desc(users.createdAt))
+      return NextResponse.json(list)
+    }
+
     if (!(["CUSTOMER", "VENDOR", "ADMIN"] as const).includes(role as UserRole)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 })
     }
@@ -86,11 +95,44 @@ export async function POST() {
   }
 }
 
-// One-time role selection for the current authenticated user.
+// One-time role selection for the current authenticated user, plus admin role management.
 export async function PATCH(req: Request) {
   try {
     const clerkUser = await currentUser()
     if (!clerkUser) return NextResponse.json({ error: "Authentication required" }, { status: 401 })
+
+    const body = (await req.json().catch(() => ({}))) as RolePayload & {
+      userId?: string
+      role?: string
+    }
+
+    // ── ADMIN role management: change another user's role in the DB ──
+    if (body.userId) {
+      const adminAccess = await requireRole("ADMIN")
+      if (adminAccess.status) {
+        return NextResponse.json({ error: "Admin access required" }, { status: adminAccess.status })
+      }
+      if (
+        body.role !== "CUSTOMER" &&
+        body.role !== "VENDOR" &&
+        body.role !== "ADMIN"
+      ) {
+        return NextResponse.json({ error: "Role must be CUSTOMER, VENDOR, or ADMIN" }, { status: 400 })
+      }
+      const targetValid = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, body.userId))
+        .limit(1)
+      if (targetValid.length === 0) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 })
+      }
+      await db
+        .update(users)
+        .set({ role: body.role as UserRole, updatedAt: new Date() })
+        .where(eq(users.id, body.userId))
+      return NextResponse.json({ success: true, userId: body.userId, role: body.role })
+    }
 
     const dbUser = await syncUserInDb(clerkUser)
     if (!dbUser) return NextResponse.json({ error: "An email address is required" }, { status: 400 })
@@ -98,7 +140,6 @@ export async function PATCH(req: Request) {
     // If role already assigned, treat as success
     if (dbUser.role) return NextResponse.json({ success: true, role: dbUser.role, alreadyAssigned: true })
 
-    const body = (await req.json()) as RolePayload
     if (body.role !== "CUSTOMER" && body.role !== "VENDOR") {
       return NextResponse.json({ error: "Role must be CUSTOMER or VENDOR" }, { status: 400 })
     }

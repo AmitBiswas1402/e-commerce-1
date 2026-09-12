@@ -154,7 +154,7 @@ ${cleanBrand ? `Brand/Publisher: "${cleanBrand}"` : ""}
 ${cleanCategory ? `Category: "${cleanCategory}"` : ""}
 `
 
-        const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        const modelsToTry = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash"]
         let textResult = ""
 
         for (const modelName of modelsToTry) {
@@ -183,8 +183,19 @@ ${cleanCategory ? `Category: "${cleanCategory}"` : ""}
             .replace(/```/g, "")
             .trim()
 
-          const parsed = JSON.parse(cleanJson)
-          const outputText = parsed.fullFormattedText || parsed.specsText || parsed.description
+          let parsed: any = null
+          try {
+            parsed = JSON.parse(cleanJson)
+          } catch {
+            const jsonMatch = cleanJson.match(/\{[\s\S]*\}/)
+            if (jsonMatch) {
+              try {
+                parsed = JSON.parse(jsonMatch[0])
+              } catch {}
+            }
+          }
+
+          const outputText = parsed?.fullFormattedText || parsed?.specsText || parsed?.description
 
           if (outputText) {
             return NextResponse.json({
